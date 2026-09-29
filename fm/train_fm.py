@@ -69,6 +69,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--iters", type=int, default=None, help="override train.iters")
     ap.add_argument("--val-every", type=int, default=None)
+    ap.add_argument("--warmup", type=int, default=None, help="override train.warmup")
     ap.add_argument("--init-from", default=None, help="finetune: initialize model and EMA from this checkpoint's EMA")
     ap.add_argument("--lr-scale", type=float, default=1.0)
     ap.add_argument("--fixed-batch", action="store_true", help="overfit test: reuse the first batch forever")
@@ -93,6 +94,7 @@ def main():
     tc, dc, vc = cfg["train"], cfg["data"], cfg["val"]
     iters = args.iters or tc["iters"]
     val_every = args.val_every or vc["every"]
+    warmup = tc["warmup"] if args.warmup is None else args.warmup
     gbs = tc["batch_size"]
     assert gbs % world == 0
     bs = gbs // world
@@ -154,7 +156,7 @@ def main():
             sl = slice(rank * bs, (rank + 1) * bs)
             cond, y1, y0, t = cond[sl], y1[sl], y0[sl], t[sl]
         for gr in opt.param_groups:
-            gr["lr"] = lr_at(step, base_lr, tc["warmup"], iters)
+            gr["lr"] = lr_at(step, base_lr, warmup, iters)
         with torch.autocast("cuda", dtype=torch.bfloat16):
             loss = fm_loss(net, y1, cond, y0, t)  # loss itself is computed in fp32 inside fm_loss
         opt.zero_grad(set_to_none=True)

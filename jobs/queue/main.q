@@ -1,12 +1,1 @@
 sbatch --parsable --job-name=p4-trainsolver-real-s2 --export=ALL,MODEL=trainsolver,TDT=real,SEED=2 slurm/train_baseline.sh
-sbatch --parsable --job-name=t53-unit slurm/eval.sh fm/tests/test_fm.py --data
-sbatch --parsable --job-name=fm54-unet_M slurm/fm.sh --config fm/configs/cylinder/unet_M.yaml --train-data-type real --out /work/b314513067/pi-lfm/results/fm/step5.4_overfit/unet_M --fixed-batch --no-val --iters 2000 --log-every 50
-sbatch --parsable --job-name=fm54-dit_M slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type real --out /work/b314513067/pi-lfm/results/fm/step5.4_overfit/dit_M --fixed-batch --no-val --iters 2000 --log-every 50
-sbatch --parsable --job-name=fm55-unet_S slurm/fm.sh --config fm/configs/cylinder/unet_S.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/unet_S --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-unet_M slurm/fm.sh --config fm/configs/cylinder/unet_M.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/unet_M --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-unet_L slurm/fm.sh --config fm/configs/cylinder/unet_L.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/unet_L --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-dit_S slurm/fm.sh --config fm/configs/cylinder/dit_S.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/dit_S --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-dit_M slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/dit_M --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-dit_L slurm/fm.sh --config fm/configs/cylinder/dit_L.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke/dit_L --no-val --iters 200 --log-every 20
-sbatch --parsable --job-name=fm55-ddp1 slurm/fm.sh --config fm/configs/cylinder/unet_S.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_ddp/g1 --no-val --iters 20 --log-every 1 --ddp-check
-sbatch --parsable --gres=gpu:2 --job-name=fm55-ddp2 slurm/fm.sh --config fm/configs/cylinder/unet_S.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_ddp/g2 --no-val --iters 20 --log-every 1 --ddp-check
