@@ -1,0 +1,21 @@
+diff --git a/realpdebench/data/fluid_hf_dataset.py b/realpdebench/data/fluid_hf_dataset.py
+index ab917e2..12fbd71 100644
+--- a/realpdebench/data/fluid_hf_dataset.py
++++ b/realpdebench/data/fluid_hf_dataset.py
+@@ -163,10 +163,13 @@ class FluidHFDataset(RealDataset):
+         logging.info(f"Loading trajectories from: {trajectory_path}")
+         self.trajectories = load_from_disk(trajectory_path)
+ 
+-        # Build sim_id -> trajectory_idx mapping
++        # Build sim_id -> trajectory_idx mapping.
++        # NOTE: indexing a row (`self.trajectories[i]`) decodes every column, including the
++        # multi-GB u/v/p arrays, just to read one string. On a 135 GB split that costs minutes
++        # and drives RSS past the 200 GB per-GPU cgroup limit. Reading the single column
++        # yields the identical ids without materializing the fields.
+         self._sim_id_to_idx: Dict[str, int] = {}
+-        for i in range(len(self.trajectories)):
+-            sim_id = self.trajectories[i]["sim_id"]
++        for i, sim_id in enumerate(self.trajectories.select_columns(["sim_id"])["sim_id"]):
+             self._sim_id_to_idx[sim_id] = i
+ 
+         logging.info(f"  Loaded {len(self.trajectories)} trajectories")

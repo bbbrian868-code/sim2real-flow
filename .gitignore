@@ -1,0 +1,19 @@
+# code only; data, checkpoints, results live in /work/b314513067/pi-lfm
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.arrow
+*.h5
+*.hdf5
+*.log
+*.out
+*.err
+wandb/
+__pycache__/
+*.pyc
+data/
+ckpt/
+runs/
+results/
