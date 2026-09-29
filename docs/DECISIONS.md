@@ -13,3 +13,13 @@
 | D-006 | 09-29 | 0.3 | 不升級官方程式碼 | 上游在 62f4c80 之後沒有新 commit |
 | D-007 | 09-29 | 2.1 | numerical 資料不做逐條統計 | 新舊版 numerical 逐位元相同（Step 1.1 的 sha256），統計量必然相同 |
 | D-008 | 09-29 | 2.3 | Stage 1 驗證自己重寫（`scripts/stage1_checks.py`），檢查三項：座標、v/vo 正負號慣例、divergence floor（**使用者指示**「沒有就自己建」） | 原本的腳本和報告不存在 |
+| D-009 | 09-29 | 5.1 | FM 採方案 **B**（自寫訓練迴圈，import 官方的 dataset、normalizer、metrics） | 方案 A 要改官方的 `load_model.py`，而且官方迴圈沒有 EMA、DDP、bf16、AdamW、warmup |
+| D-010 | 09-29 | 5.2 | FM 的 `mask_prob=0.5`、`noise_scale=0.1`（照官方 **U-Net** cylinder config） | 官方各 baseline 的 mask_prob 不同（U-Net 0.5，其他 0.1）；FM 主要和 U-Net 比，所以取 U-Net 的值 |
+| D-011 | 09-29 | 6.1 | FM 的 val 子集 = real val 每 9 筆取 1 筆，共 **536 筆**（依 index 順序，涵蓋所有 sim） | val 和 test 共用全部 92 個 sim，而且 75% 的時間窗重疊（Step 1.3），用小子集就足以代表；N=10、K=1 時驗證成本低 |
+| D-012 | 09-29 | 5.2 | 大小：U-Net base_ch 40/80/144（channel_mult 1-2-4-4，2 個 res block）= 9.74M/38.80M/125.45M；DiT patch 4，dim×depth = 256×8 / 512×8 / 768×11 = 10.47M/40.21M/121.09M | 同一檔差距在 ±7.5% 內；目標是 10M/40M/120M（附錄 B 第 3 項的預設值） |
+| D-013 | 09-29 | 5.2 | FM 訓練超參數：AdamW、lr 1e-4、weight_decay 0、betas (0.9, 0.999)、warmup 1000、global batch 64、clip 1.0、EMA 用 warmup 公式；iteration 預算等 Step 5.5 之後再定 | 規格沒指定 lr 和 wd，採 DiT/ADM 的常用值；wd=0 避免在 EMA 之外再多一個正則化變因 |
+| D-014 | 09-29 | 3.x | 所有評估都走 `pilfm/official_eval.py`（逐行複製 eval.py 的迴圈，指標呼叫官方的 `eval_metrics`），不直接執行官方 `eval.py` | 同一條路徑要評估 persistence 和 FM；官方 eval.py 在 log 裡只印 5 位小數，而且同一秒啟動的 run 會寫進同一個目錄。一致性由 Step 3.1 控制組驗證 |
+| D-015 | 09-29 | 5.2 | FM 訓練使用 `pilfm/fast_dataset.py`（官方 dataset 的 zero-copy 子類別） | 官方的 `__getitem__` 每筆樣本要解碼約 1.5 GB，batch 64 無法接受；逐位元等價性由測試 (f) 驗證 |
+| D-016 | 09-29 | 5.2 | U-Net 的 ResBlock 第二個卷積、bottleneck attention 的輸出投影也做 zero-init（ADM 慣例）；最後一層卷積照規格 zero-init | 這是標準 ADM 結構的一部分，不屬於 5.0 表格裡的「技巧」；它讓初始狀態下每個 block 都等於恆等映射 |
+| D-017 | 09-29 | 4.1 | **real 與 finetune 的 seed 0 不重訓**：沿用既有 run 的 50 個中間 checkpoint，在 2.0.1 val 上重新選最佳點；只新訓 seed 1、2 | 2.0.1 裡 real **train** 資料逐位元沒變（`3656.h5` 只在 val/test，Step 1.3），官方流程在同一個 seed 下重訓會得到相同的權重軌跡，唯一的差別是 checkpoint 選擇。finetune 例外：如果 numerical 的最佳點改變，起點就不同，要重訓 |
+| D-018 | 09-29 | 4.1 | baseline 重訓的 config 除了資料路徑和 seed，還改了 `num_workers: 6` 和 `exp_name` 後綴 `_s{seed}`，以及 results_path | num_workers 6 是 2.0.0 重訓時避免 cgroup OOM（SIGBUS）用的設定，不影響 real 資料的 batch 組成；exp_name 只影響輸出路徑，用來避免同秒啟動的 run 撞到同一個目錄 |
