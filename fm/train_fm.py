@@ -104,7 +104,7 @@ def main():
     # data: official dataset semantics (fast subclass), official normalizer
     ds = FastCylinderHFDataset(dataset_name="cylinder", dataset_root=dc["root"], mode="train",
                                dataset_type=args.train_data_type, mask_prob=dc["mask_prob"],
-                               noise_scale=dc["noise_scale"])
+                               noise_scale=dc["noise_scale"], cache_dir=dc.get("cache_dir"))
     use_sampler = ddp and not args.ddp_check
     sampler = torch.utils.data.distributed.DistributedSampler(ds, world, rank, shuffle=True, seed=args.seed) if use_sampler else None
     g = torch.Generator(); g.manual_seed(args.seed)

@@ -4,6 +4,7 @@ data:
   mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
   noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
   num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
 model:
   backbone: unet
   base_ch: 144

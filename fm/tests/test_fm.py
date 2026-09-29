@@ -24,6 +24,7 @@ CFGS = {
 }
 T, C, H, W = 20, 3, 64, 128
 DATA_ROOT = "/work/b314513067/pi-lfm/data_v2.0.1"
+CACHE = "/work/b314513067/pi-lfm/cache/v2.0.1"
 
 
 def test_shapes():
@@ -127,14 +128,19 @@ def test_fast_dataset():
     for typ, mode in (("real", "train"), ("real", "val"), ("numerical", "train")):
         kw = dict(dataset_name="cylinder", dataset_root=DATA_ROOT, mode=mode, dataset_type=typ,
                   mask_prob=0.5, noise_scale=0.1 if typ == "numerical" else 0.0)
-        a, b = CylinderHFDataset(**kw), FastCylinderHFDataset(**kw)
+        dss = [CylinderHFDataset(**kw), FastCylinderHFDataset(**kw)]
+        if os.path.exists(os.path.join(CACHE, typ, "manifest.json")):
+            dss.append(FastCylinderHFDataset(cache_dir=CACHE, **kw))
+        a = dss[0]
         for i in np.random.default_rng(1).choice(len(a), 4, replace=False):
             outs = []
-            for ds in (a, b):
+            for ds in dss:
                 random.seed(123); torch.manual_seed(123)
                 outs.append(ds[int(i)])
-            assert torch.equal(outs[0][0], outs[1][0]) and torch.equal(outs[0][1], outs[1][1]), (typ, mode, i)
-        print(f"  (f) {typ}/{mode}: fast == official (bitwise, 4 samples incl. mask/noise draws)")
+            for o in outs[1:]:
+                assert torch.equal(outs[0][0], o[0]) and torch.equal(outs[0][1], o[1]), (typ, mode, i)
+        print(f"  (f) {typ}/{mode}: {len(dss)-1} fast variant(s) == official (bitwise, 4 samples incl. mask/noise draws)"
+              + (" [incl. cache]" if len(dss) == 3 else ""))
 
 
 if __name__ == "__main__":
