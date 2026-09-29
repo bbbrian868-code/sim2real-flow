@@ -15,7 +15,7 @@ from pilfm import meta
 from pilfm.fast_dataset import FastCylinderHFDataset
 from pilfm.official_eval import Env, run_val
 from fm.build import build_model, n_params
-from fm.paths import fm_loss
+from fm.paths import fm_loss, euler_sample
 from fm.wrapper import FMPredictor, fold
 
 T_IN, T_OUT, C = 20, 20, 3
@@ -193,6 +193,20 @@ def main():
                 save(os.path.join(args.out, "last.pt"), **state)
             if ddp:
                 dist.barrier()
+    if args.fixed_batch and rank == 0:
+        # Step 5.4: N=20 Euler samples on the memorized batch, raw and EMA weights, rel L2 in normalized space
+        x, y = norm.preprocess(*fixed)
+        cond, y1 = fold(x), fold(y)
+        res = {}
+        for tag, net_ in (("raw", model), ("ema", ema)):
+            net_.eval()
+            gen = torch.Generator(device=device).manual_seed(0)
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                ys = euler_sample(net_, cond, y1.shape, 20, generator=gen).float()
+            rel = ((ys - y1).flatten(1).norm(dim=1) / y1.flatten(1).norm(dim=1))
+            res[tag] = {"rel_l2_mean": rel.mean().item(), "rel_l2_max": rel.max().item()}
+        json.dump(res, open(os.path.join(args.out, "overfit_eval.json"), "w"), indent=1)
+        print("overfit eval:", res, flush=True)
     if ddp:
         dist.destroy_process_group()
 
