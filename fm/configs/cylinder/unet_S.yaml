@@ -1,0 +1,26 @@
+# Basic rectified-flow FM (spec 5.0, frozen). Target = full T_out frames (u, v, p), normalized pixel space.
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
+  num_workers: 12
+model:
+  backbone: unet
+  base_ch: 40
+  channel_mult: [1, 2, 4, 4]
+  num_res_blocks: 2
+  bottleneck_attn: false
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 100000         # placeholder; the real budget is decided after Step 5.5 (D-013)
+  clip_grad: 1.0
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 10
+  noise_seed: 0
+  every: 2000
+  batch_size: 64

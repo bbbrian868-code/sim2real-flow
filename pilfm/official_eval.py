@@ -102,11 +102,18 @@ def run_test(env, predictor, test_batch_size, device, seed=0):
     return out
 
 
-@torch.no_grad()
-def run_val(env, predictor, test_batch_size, device, metrics_device="cpu"):
-    """Mirror of train.py:345-373. metrics_device='cpu' matches the official code exactly."""
+def val_batches(env, test_batch_size):
+    """Materialize the (unshuffled) val loader once so many checkpoints can reuse it."""
     loader = torch.utils.data.DataLoader(env.val, batch_size=test_batch_size, shuffle=False,
                                          pin_memory=True, num_workers=env.num_workers)
+    return [(x.clone(), y.clone()) for x, y in loader]
+
+
+@torch.no_grad()
+def run_val(env, predictor, test_batch_size, device, metrics_device="cpu", batches=None):
+    """Mirror of train.py:345-373. metrics_device='cpu' matches the official code exactly."""
+    loader = batches if batches is not None else torch.utils.data.DataLoader(
+        env.val, batch_size=test_batch_size, shuffle=False, pin_memory=True, num_workers=env.num_workers)
     norm = env.normalizer(device)
     normalized_val_loss = 0.
     pred_list, target_list = [], []
