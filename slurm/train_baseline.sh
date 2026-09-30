@@ -4,6 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
+#SBATCH --exclude=25a-hgpn003
 #SBATCH --gres=gpu:2
 #SBATCH --time=12:00:00
 #SBATCH --output=/work/b314513067/pi-lfm/results/slurm/%x-%j.out

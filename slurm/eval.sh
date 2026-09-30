@@ -4,6 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
+#SBATCH --exclude=25a-hgpn003
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
 #SBATCH --output=/work/b314513067/pi-lfm/results/slurm/%x-%j.out
@@ -17,5 +18,6 @@ conda activate /work/$USER/conda/envs/realpdebench
 echo "=== $(date) host=$(hostname) job=$SLURM_JOB_ID ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 cd /work/$USER/pi-lfm-code
-srun python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else \"no CUDA in srun step\")" && srun python "$@"
+srun python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else \"no CUDA in srun step\")"
+srun python "$@"
 echo "=== done $(date) ==="
