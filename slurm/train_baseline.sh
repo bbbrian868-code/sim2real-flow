@@ -18,6 +18,8 @@ module purge
 source /work/$USER/RealPDEBench/env.sh
 source $CONDA_ROOT/etc/profile.d/conda.sh
 conda activate /work/$USER/conda/envs/realpdebench
+source /work/$USER/pi-lfm-code/slurm/gpu_guard.sh
+gpu_guard "$@"
 
 ROOT=/work/$USER/pi-lfm/data_v2.0.1
 OUT=/work/$USER/pi-lfm/results/v2.0.1/baselines

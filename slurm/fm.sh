@@ -15,6 +15,8 @@ module purge
 source /work/$USER/RealPDEBench/env.sh
 source $CONDA_ROOT/etc/profile.d/conda.sh
 conda activate /work/$USER/conda/envs/realpdebench
+source /work/$USER/pi-lfm-code/slurm/gpu_guard.sh
+gpu_guard "$@"
 G=$(nvidia-smi -L | wc -l)
 echo "=== $(date) host=$(hostname) job=$SLURM_JOB_ID gpus=$G ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
