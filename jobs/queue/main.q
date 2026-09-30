@@ -1,1 +1,0 @@
-sbatch --parsable --job-name=vc2-real_False slurm/eval.sh scripts/val_curves.py --run-dir /work/b314513067/pi-lfm/runs/unet/unet_cylinder_real_False/2026-09-15_20-59-14 --config configs/cylinder/unet.yaml --data-root /work/b314513067/pi-lfm/data_v2.0.1 --out-dir /work/b314513067/pi-lfm/results/v2.0.1/val_curves
