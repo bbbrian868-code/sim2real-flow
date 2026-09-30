@@ -21,6 +21,7 @@ CFGS = {
     "unet_S_attn": dict(backbone="unet", base_ch=40, channel_mult=(1, 2, 4, 4), num_res_blocks=2, bottleneck_attn=True),
     "dit_S": dict(backbone="dit", dim=256, depth=8, heads=4, patch=4),
     "dit_S_p8": dict(backbone="dit", dim=256, depth=8, heads=4, patch=8),
+    "dit_S_p2": dict(backbone="dit", dim=256, depth=8, heads=4, patch=2),
 }
 T, C, H, W = 20, 3, 64, 128
 DATA_ROOT = "/work/b314513067/pi-lfm/data_v2.0.1"

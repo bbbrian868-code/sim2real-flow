@@ -7,7 +7,7 @@ data:
   cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
 model:
   backbone: dit
-  patch: 4
+  patch: 2             # D-019: patch 4 (960-dim y_t per token > hidden) cannot pass y_t through; 2 -> 240 dims
   dim: 256
   depth: 8
   heads: 4

@@ -34,3 +34,5 @@ FAILED sbatch --parsable --job-name=p4-trainsolver-real-s2 --export=ALL,MODEL=tr
 461249 sbatch --parsable --job-name=fm55c-dit_S slurm/fm.sh --config fm/configs/cylinder/dit_S.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke_cache/dit_S --no-val --iters 300 --log-every 20
 461250 sbatch --parsable --job-name=fm55c-dit_M slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke_cache/dit_M --no-val --iters 300 --log-every 20
 461251 sbatch --parsable --job-name=fm55c-dit_L slurm/fm.sh --config fm/configs/cylinder/dit_L.yaml --train-data-type numerical --out /work/b314513067/pi-lfm/results/fm/step5.5_smoke_cache/dit_L --no-val --iters 300 --log-every 20
+461255 sbatch --parsable --job-name=diag-unet_M slurm/eval.sh fm/tests/diag_overfit.py --run /work/b314513067/pi-lfm/results/fm/step5.4_overfit_w100/unet_M_it2000
+461256 sbatch --parsable --job-name=diag-dit_M slurm/eval.sh fm/tests/diag_overfit.py --run /work/b314513067/pi-lfm/results/fm/step5.4_overfit_w100/dit_M_it2000
