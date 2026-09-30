@@ -1,0 +1,7 @@
+sbatch --parsable --job-name=p4-unet-ft-s0 --export=ALL,MODEL=unet,TDT=real,SEED=0,INIT=/work/b314513067/pi-lfm/runs/unet/unet_cylinder_numerical_False/2026-09-15_20-22-46/model_9800.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-trainsolver-ft-s0 --export=ALL,MODEL=trainsolver,TDT=real,SEED=0,INIT=/work/b314513067/pi-lfm/runs/transolver/transolver_cylinder_numerical_False/2026-09-15_20-22-46/model_1100.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-unet-ft-s1 --export=ALL,MODEL=unet,TDT=real,SEED=1,INIT=/work/b314513067/pi-lfm/runs/unet/unet_cylinder_numerical_False/2026-09-15_20-22-46/model_9800.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-trainsolver-ft-s1 --export=ALL,MODEL=trainsolver,TDT=real,SEED=1,INIT=/work/b314513067/pi-lfm/runs/transolver/transolver_cylinder_numerical_False/2026-09-15_20-22-46/model_1100.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-unet-ft-s2 --export=ALL,MODEL=unet,TDT=real,SEED=2,INIT=/work/b314513067/pi-lfm/runs/unet/unet_cylinder_numerical_False/2026-09-15_20-22-46/model_9800.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-trainsolver-ft-s2 --export=ALL,MODEL=trainsolver,TDT=real,SEED=2,INIT=/work/b314513067/pi-lfm/runs/transolver/transolver_cylinder_numerical_False/2026-09-15_20-22-46/model_1100.pth slurm/train_baseline.sh
+sbatch --parsable --job-name=p4-deeponet-ft-s0 --export=ALL,MODEL=deeponet,TDT=real,SEED=0,INIT=/work/b314513067/pi-lfm/runs/deeponet/deeponet_cylinder_numerical_False/2026-09-15_20-21-44/model_1300.pth slurm/train_baseline.sh
