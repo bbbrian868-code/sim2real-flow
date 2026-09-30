@@ -27,3 +27,6 @@
 | D-020 | 09-30 | 5.4 | 過擬合測試加做 warmup 100 的版本（2000 步照規格，另加 10000 步），並加上逐 t 分段的診斷（`fm/tests/diag_overfit.py`） | 原本的排程是 warmup 1000 加 cosine 到 0，2000 步裡有效學習不到一半 |
 | D-021 | 09-30 | 4.2 | **finetune 起點**（附錄 B 第 1 項）= 我們重訓的 numerical seed 0，**依 2.0.1 val 重新選出的最佳點**：U-Net `model_9800`、DeepONet `model_1300`、Transolver `model_1100` | 官方 numerical checkpoint 是用有問題的 2.0.0 val 選出來的，而且沒有中間 checkpoint 可以重新選點；我們的 run 有 50 個中間 checkpoint |
 | D-022 | 09-30 | 4.1 | 因為 numerical 的最佳點改變了（Step 3.4），**finetune 的 seed 0 也重訓**（D-017 的例外）；real 的 seed 0 仍沿用既有 run，在 2.0.1 val 上重新選點（U-Net 6800、DeepONet 4700、Transolver 5000） | finetune 的起點不同，就不能沿用舊的權重軌跡 |
+| D-023 | 09-30 | 5.5 | **FM 訓練預算**（附錄 B 第 2 項）：numerical 和 real 都是 **50k 步** × global batch 64（= 320 萬筆樣本；numerical train 約 176 個 epoch，real 約 353 個 epoch）；val 每 2000 步一次 | 如果照 U-Net baseline 的 10k 步 × batch 64，Step 5.4 顯示光是記住一個 batch，U-Net-M 就要大約 10k 步，顯然不夠。50k 步時 M 檔單張 H200 只要 1.4–2.5 小時，成本很低；checkpoint 由 val 選，不怕過擬合 |
+| D-024 | 09-30 | 6.2 | **FM finetune**（附錄 B 第 4 項）：用 numerical 最佳 checkpoint 的 **EMA 權重**初始化，重置 optimizer 和 EMA 的步數計數，**lr × 0.3**，**20k 步**，warmup 同樣是 1000 | lr 的比例沒有官方參考值（baseline 的 finetune 用的是相同 lr），0.3 是常見的中間值；real train 只有 9063 筆，20k × 64 ≈ 141 個 epoch |
+| D-025 | 09-30 | 6.1 | 算力（附錄 B 第 6 項）：全部在 Nano4 H200 上跑；M 檔每個 run 用 **1 張 H200**，L 檔用 2 張（DDP） | 本叢集沒有 L40S；M 檔單卡 1.4–2.5 小時就夠 |
