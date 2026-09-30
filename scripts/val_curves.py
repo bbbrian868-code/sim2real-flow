@@ -19,6 +19,8 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--metrics-device", default="cpu")
     args = ap.parse_args()
+    if not torch.cuda.is_available():
+        sys.exit("CUDA not available in this process (srun step got no GPU); refusing to fall back to CPU")
     device = "cuda:0"
     env = Env(args.data_root, need_test=False, need_val=True)
     cache = {}
@@ -34,15 +36,23 @@ def main():
         out = os.path.join(args.out_dir, f"{name}.json")
         rec = {"run_dir": run, "data_root": args.data_root, "metrics_device": args.metrics_device, "points": [],
                "meta": meta.collect(data_root=args.data_root, config=cfg_text, seed=cfg.get("seed"))}
+        partial = out + ".partial"
+        if os.path.exists(partial):  # resume
+            rec["points"] = json.load(open(partial))["points"]
+        done_its = {q["iteration"] for q in rec["points"]}
         for p in ckpts:
             it = int(re.findall(r"model_(\d+)", p)[0])
+            if it in done_its:
+                continue
             model = build_official_model(env, cfg, p, device)
             m = run_val(env, model, bs, device, metrics_device=args.metrics_device, batches=cache[bs])
             stored = torch.load(p, map_location="cpu", weights_only=False)["val_losses"]
             k = len(stored["rmse"]) - 1  # this checkpoint's own entry in its stored curve
             rec["points"].append({"iteration": it, "ckpt": p, **m, "stored_old_val_rmse": float(stored["rmse"][k])})
             print(f"{name} it={it} val_rmse={m['rmse']:.6f} (stored old-val {float(stored['rmse'][k]):.6f})", flush=True)
+            json.dump(rec, open(partial, "w"))
             del model; torch.cuda.empty_cache()
+        rec["points"].sort(key=lambda r: r["iteration"])
         best = min(rec["points"], key=lambda r: r["rmse"])
         rec["best_iteration"], rec["best_val_rmse"] = best["iteration"], best["rmse"]
         json.dump(rec, open(out, "w"), indent=1)

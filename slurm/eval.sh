@@ -17,5 +17,5 @@ conda activate /work/$USER/conda/envs/realpdebench
 echo "=== $(date) host=$(hostname) job=$SLURM_JOB_ID ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 cd /work/$USER/pi-lfm-code
-srun python "$@"
+srun python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else \"no CUDA in srun step\")" && srun python "$@"
 echo "=== done $(date) ==="

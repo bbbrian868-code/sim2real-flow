@@ -30,7 +30,9 @@ def main():
     if args.only:
         keep = set(args.only.split(","))
         jobs = [j for j in jobs if j["name"] in keep]
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    if not torch.cuda.is_available():
+        sys.exit("CUDA not available in this process (srun step got no GPU); refusing to fall back to CPU")
+    device = "cuda:0"
     env = Env(args.data_root, num_workers=args.num_workers, N_autoregressive=1,
               need_test=args.split == "test", need_val=args.split == "val")
     os.makedirs(args.out_dir, exist_ok=True)
