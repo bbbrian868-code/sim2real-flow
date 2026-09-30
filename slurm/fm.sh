@@ -3,7 +3,7 @@
 #SBATCH --partition=8gpus
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=12
 #SBATCH --exclude=25a-hgpn003,25a-hgpn146
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00

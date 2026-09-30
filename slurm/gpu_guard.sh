@@ -9,7 +9,7 @@ gpu_guard() {
   fi
   local self; self=$(scontrol show job "$SLURM_JOB_ID" | sed -n 's/^ *Command=\([^ ]*\).*/\1/p')
   export EXCL="${EXCL:-25a-hgpn003,25a-hgpn146},$(hostname -s)"
-  local new; new=$(cd /work/$USER/pi-lfm-code && sbatch --parsable --exclude="$EXCL" --gres=gpu:$ngpu \
+  local new; new=$(cd /work/$USER/pi-lfm-code && sbatch --parsable --exclude="$EXCL" --gres=gpu:$ngpu --cpus-per-task=$((12 * ngpu)) \
       --job-name="$SLURM_JOB_NAME" "$self" "$@")
   echo "GPU_GUARD: no working CUDA on $(hostname -s); resubmitted as $new (exclude=$EXCL)"
   exit 0
