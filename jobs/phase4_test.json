@@ -1,0 +1,172 @@
+[
+ {
+  "name": "unet_numerical_s0",
+  "kind": "official",
+  "model": "unet",
+  "setting": "numerical",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/unet/unet_cylinder_numerical_False/2026-09-15_20-22-46/model_9800.pth"
+ },
+ {
+  "name": "deeponet_numerical_s0",
+  "kind": "official",
+  "model": "deeponet",
+  "setting": "numerical",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/deeponet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/deeponet/deeponet_cylinder_numerical_False/2026-09-15_20-21-44/model_1300.pth"
+ },
+ {
+  "name": "transolver_numerical_s0",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "numerical",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/transolver/transolver_cylinder_numerical_False/2026-09-15_20-22-46/model_1100.pth"
+ },
+ {
+  "name": "unet_real_s0",
+  "kind": "official",
+  "model": "unet",
+  "setting": "real",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/unet/unet_cylinder_real_False/2026-09-15_20-59-14/model_6800.pth"
+ },
+ {
+  "name": "unet_real_s1",
+  "kind": "official",
+  "model": "unet",
+  "setting": "real",
+  "seed": 1,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/unet/unet_cylinder_s1_real_False/2026-09-29_19-51-54/model_6000.pth"
+ },
+ {
+  "name": "unet_real_s2",
+  "kind": "official",
+  "model": "unet",
+  "setting": "real",
+  "seed": 2,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/unet/unet_cylinder_s2_real_False/2026-09-29_19-51-59/model_6600.pth"
+ },
+ {
+  "name": "transolver_real_s0",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "real",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/transolver/transolver_cylinder_real_False/2026-09-15_20-59-15/model_5000.pth"
+ },
+ {
+  "name": "transolver_real_s1",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "real",
+  "seed": 1,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/transolver/transolver_cylinder_s1_real_False/2026-09-29_19-52-02/model_5000.pth"
+ },
+ {
+  "name": "transolver_real_s2",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "real",
+  "seed": 2,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/transolver/transolver_cylinder_s2_real_False/2026-09-29_20-28-09/model_5000.pth"
+ },
+ {
+  "name": "deeponet_real_s0",
+  "kind": "official",
+  "model": "deeponet",
+  "setting": "real",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/deeponet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/runs/deeponet/deeponet_cylinder_real_False/2026-09-15_20-22-41/model_4700.pth"
+ },
+ {
+  "name": "unet_finetune_s0",
+  "kind": "official",
+  "model": "unet",
+  "setting": "finetune",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/unet/unet_cylinder_s0_real_True/2026-09-30_14-57-58/model_6800.pth"
+ },
+ {
+  "name": "unet_finetune_s1",
+  "kind": "official",
+  "model": "unet",
+  "setting": "finetune",
+  "seed": 1,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/unet/unet_cylinder_s1_real_True/2026-09-30_14-57-57/model_6000.pth"
+ },
+ {
+  "name": "unet_finetune_s2",
+  "kind": "official",
+  "model": "unet",
+  "setting": "finetune",
+  "seed": 2,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/unet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/unet/unet_cylinder_s2_real_True/2026-09-30_14-57-51/model_5800.pth"
+ },
+ {
+  "name": "transolver_finetune_s0",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "finetune",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/transolver/transolver_cylinder_s0_real_True/2026-09-30_14-57-57/model_5000.pth"
+ },
+ {
+  "name": "transolver_finetune_s1",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "finetune",
+  "seed": 1,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/transolver/transolver_cylinder_s1_real_True/2026-09-30_14-57-58/model_5000.pth"
+ },
+ {
+  "name": "transolver_finetune_s2",
+  "kind": "official",
+  "model": "transolver",
+  "setting": "finetune",
+  "seed": 2,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/trainsolver.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/transolver/transolver_cylinder_s2_real_True/2026-09-30_14-57-51/model_5000.pth"
+ },
+ {
+  "name": "deeponet_finetune_s0",
+  "kind": "official",
+  "model": "deeponet",
+  "setting": "finetune",
+  "seed": 0,
+  "source": "retrained_v2.0.1_selection",
+  "config": "/work/b314513067/pi-lfm-code/configs/cylinder/deeponet.yaml",
+  "ckpt": "/work/b314513067/pi-lfm/results/v2.0.1/baselines/runs/deeponet/deeponet_cylinder_s0_real_True/2026-09-30_14-57-51/model_5000.pth"
+ }
+]
