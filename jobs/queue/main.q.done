@@ -57,3 +57,7 @@ FAILED sbatch --parsable --job-name=p6-dit_M-numerical-s0 slurm/fm.sh --config f
 sbatch: error: Batch job submission failed: Unspecified error
 FAILED sbatch --parsable --job-name=p6-dit_M-real-s0 slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type real --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/fm/phase6/dit_M_real_s0 :: sbatch: error: ERROR: CPU per node specification of 24 exceeds the limit (1 * 12).
 sbatch: error: Batch job submission failed: Unspecified error
+461868 sbatch --parsable --job-name=p6-unet_M-numerical-s0 slurm/fm.sh --config fm/configs/cylinder/unet_M.yaml --train-data-type numerical --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/fm/phase6/unet_M_numerical_s0
+461869 sbatch --parsable --job-name=p6-unet_M-real-s0 slurm/fm.sh --config fm/configs/cylinder/unet_M.yaml --train-data-type real --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/fm/phase6/unet_M_real_s0
+461870 sbatch --parsable --job-name=p6-dit_M-numerical-s0 slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type numerical --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/fm/phase6/dit_M_numerical_s0
+461871 sbatch --parsable --job-name=p6-dit_M-real-s0 slurm/fm.sh --config fm/configs/cylinder/dit_M.yaml --train-data-type real --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/fm/phase6/dit_M_real_s0
