@@ -9,8 +9,17 @@ gpu_guard() {
   fi
   local self; self=$(scontrol show job "$SLURM_JOB_ID" | sed -n 's/^ *Command=\([^ ]*\).*/\1/p')
   export EXCL="${EXCL:-25a-hgpn003,25a-hgpn146},$(hostname -s)"
-  local new; new=$(cd /work/$USER/pi-lfm-code && sbatch --parsable --exclude="$EXCL" --gres=gpu:$ngpu --cpus-per-task=$((12 * ngpu)) \
-      --job-name="$SLURM_JOB_NAME" "$self" "$@")
+  # The resubmission can hit the per-user submit limit (QOSMaxSubmitJobPerUserLimit); wait for a slot instead of
+  # losing the run.
+  local new tries=0
+  until new=$(cd /work/$USER/pi-lfm-code && sbatch --parsable --exclude="$EXCL" --gres=gpu:$ngpu --cpus-per-task=$((12 * ngpu)) \
+      --job-name="$SLURM_JOB_NAME" "$self" "$@" 2>&1) && [[ "$new" =~ ^[0-9]+$ ]]; do
+    tries=$((tries + 1))
+    if [[ "$new" != *QOSMaxSubmitJobPerUserLimit* || $tries -ge 120 ]]; then
+      echo "GPU_GUARD: resubmission failed: $new" >&2; exit 1
+    fi
+    sleep 60
+  done
   echo "GPU_GUARD: no working CUDA on $(hostname -s); resubmitted as $new (exclude=$EXCL)"
   exit 0
 }
