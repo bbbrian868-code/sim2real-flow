@@ -170,6 +170,26 @@
 - 2.0.0 時期 seed-0 run 對應的 config：`pi-lfm-code/configs/cylinder/`（`*_nw6.yaml`、`*_finetune.yaml` 是當時啟動腳本產生的檔案）
 - 官方 checkpoint 沒有中間 checkpoint，也沒有可以重新選點的曲線，只在 §4.1 做評估。
 
+### 5.4 Update Ratio（只用於 finetune）
+
+定義（RealPDEBench 官方指標，https://realpdebench.github.io/metrics/data-oriented/ ）：**Update Ratio = N₁/N₂**。RMSE₀ 是 real-world training 的最佳 RMSE；N₂ 和 N₁ 分別是 real training 和 finetuning 達到 RMSE₀ 所需的更新次數。< 1 代表 sim 預訓練減少了所需的更新次數。
+
+官網沒有規定的細節，依 D-026 採用：**2.0.1 val RMSE**、官方評估間隔（num_update/50）、N₂ = real run 最佳點的 iteration、N₁ = finetune **第一次** val RMSE ≤ RMSE₀ 的 iteration、real 和 finetune **按 seed 配對**、沒達到就標 not reached。
+
+| 模型 | seed | RMSE₀（val） | N₂ | N₁ | Update Ratio |
+|---|---|---|---|---|---|
+| U-Net | 0 | 0.012008 | 6800 | 6800 | 1.000 |
+| U-Net | 1 | 0.012004 | 6000 | 5200 | 0.867 |
+| U-Net | 2 | 0.011935 | 6600 | – | **not reached**（finetune 最佳 0.011971） |
+| DeepONet | 0 | 0.024505 | 4700 | 2200 | 0.468 |
+| Transolver | 0 | 0.026411 | 5000 | 1200 | 0.240 |
+| Transolver | 1 | 0.025134 | 5000 | 2100 | 0.420 |
+| Transolver | 2 | 0.028172 | 5000 | 600 | 0.120 |
+
+- 結果：`$R/v2.0.1/phase4_update_ratio.csv`；腳本：`pi-lfm-code/scripts/update_ratio.py`（曲線來源和 §5.3 相同）。
+- 解讀：和 §5.2 一致，sim 預訓練能幫 Transolver 和 DeepONet 大幅減少達到同樣表現所需的更新次數（0.12–0.47）；對 U-Net 幾乎沒有幫助（0.87–1.0，有一個 seed 沒達到）。
+- **和論文不可直接比較**：用官方 checkpoint 存的 val 曲線，以任何一種常見算法都無法同時重現論文的 0.3636 / 0.5758 / 1.0（照字面的算法得到 0.030 / 0.515 / 0.125）。論文可能用了 test 曲線、不同的 run，或者某個沒公開的細節。
+
 ---
 
 ## 6. 偏離任務清單的地方（完整理由見 `DECISIONS.md`）
@@ -199,6 +219,5 @@
 ## 8. 尚未完成（Phase 0–4 範圍）
 
 - **Step 3.6**（N_ar = 10 與 MVPE）：可選項目，需要使用者另外批准，所以沒有做。
-- **Update Ratio**：任務沒有定義，所以還沒算；需要的 val 曲線都已經保存好了（§4.2、§5.2）。
 - **DeepONet 的多 seed**：任務說之後再補，目前只有 1 個 seed。
 - **Step 4.3 其餘 baseline**：任務本來就只要求排程、不執行。排程見 `docs/reports/step_4_baselines.md`。

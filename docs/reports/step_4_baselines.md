@@ -60,6 +60,17 @@
 
 所有模型共用 `slurm/train_baseline.sh`（每個 run 有自己的 config，並有 GPU guard）和 `scripts/eval_ckpts.py`（評估），finetune 的起點沿用 D-021 的原則。
 
+## Update Ratio（finetune）
+
+RealPDEBench 官方指標（https://realpdebench.github.io/metrics/data-oriented/ ）：Update Ratio = N₁/N₂。RMSE₀ 是 real-world training 的最佳 RMSE；N₂ 和 N₁ 分別是 real training 和 finetuning 達到 RMSE₀ 所需的更新次數。官網沒有規定的細節依 **D-026**：2.0.1 val RMSE、官方評估間隔、N₁ = finetune 第一次達到 RMSE₀ 的 iteration、按 seed 配對。
+
+| 模型 | seed 0 | seed 1 | seed 2 |
+|---|---|---|---|
+| U-Net | 1.000（6800/6800） | 0.867（5200/6000） | not reached（finetune 最佳 0.011971 > RMSE₀ 0.011935） |
+| DeepONet | 0.468（2200/4700） | – | – |
+| Transolver | 0.240（1200/5000） | 0.420（2100/5000） | 0.120（600/5000） |
+
+結果：`results/v2.0.1/phase4_update_ratio.csv`；腳本：`scripts/update_ratio.py`。**和論文的數值不可直接比較**：用官方 checkpoint 的 val 曲線，以任何常見算法都無法重現論文的 0.3636 / 0.5758 / 1.0（見 D-026）。
+
 ## 尚未完成
-- **Update Ratio**：任務沒有定義這個指標，所以還沒算。val 曲線的原始資料都已經保存好了（見 Step 3.4 和上述 checkpoint）。
 - DeepONet 的多 seed：任務說「之後再補 seed」，目前只有 1 個。
