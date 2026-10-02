@@ -102,9 +102,13 @@ def main():
     random.seed(args.seed + rank); np.random.seed(args.seed + rank); torch.manual_seed(args.seed + rank)
 
     # data: official dataset semantics (fast subclass), official normalizer
+    # Step 6.3 ablation 4: noise_on_target=false keeps the official multiplicative gaussian sim noise on the
+    # condition only (applied below, same form as fluid_hf_dataset.py:314) and leaves the target clean.
+    noise_on_target = dc.get("noise_on_target", True)
+    cond_only_noise = dc["noise_scale"] if (not noise_on_target and args.train_data_type == "numerical") else 0.0
     ds = FastCylinderHFDataset(dataset_name="cylinder", dataset_root=dc["root"], mode="train",
                                dataset_type=args.train_data_type, mask_prob=dc["mask_prob"],
-                               noise_scale=dc["noise_scale"], cache_dir=dc.get("cache_dir"))
+                               noise_scale=dc["noise_scale"] if noise_on_target else 0.0, cache_dir=dc.get("cache_dir"))
     use_sampler = ddp and not args.ddp_check
     sampler = torch.utils.data.distributed.DistributedSampler(ds, world, rank, shuffle=True, seed=args.seed) if use_sampler else None
     g = torch.Generator(); g.manual_seed(args.seed)
@@ -146,6 +150,8 @@ def main():
         x, y = (fixed if fixed is not None else next(it))
         if args.fixed_batch and fixed is None:
             fixed = (x, y)
+        if cond_only_noise > 0:
+            x = x + x * torch.randn_like(x) * cond_only_noise
         x, y = norm.preprocess(x, y)
         cond, y1 = fold(x), fold(y)
         y0 = t = None
@@ -195,6 +201,8 @@ def main():
                 save(os.path.join(args.out, "last.pt"), **state)
             if ddp:
                 dist.barrier()
+    if rank == 0:
+        json.dump({"step": iters, "best_val_rmse": best}, open(os.path.join(args.out, "done.json"), "w"))
     if args.fixed_batch and rank == 0:
         # Step 5.4: N=20 Euler samples on the memorized batch, raw and EMA weights, rel L2 in normalized space
         x, y = norm.preprocess(*fixed)

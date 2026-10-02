@@ -1,0 +1,29 @@
+# Basic rectified-flow FM (spec 5.0, frozen). Target = full T_out frames (u, v, p), normalized pixel space.
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value, applied to the CONDITION only (Step 6.3 ablation 4)
+  noise_on_target: false
+  num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
+model:
+  backbone: dit
+  patch: 2             # D-019: patch 4 (960-dim y_t per token > hidden) cannot pass y_t through; 2 -> 240 dims
+  dim: 512
+  depth: 8
+  heads: 8
+  mlp_ratio: 4.0
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 100000         # placeholder; the real budget is decided after Step 5.5 (D-013)
+  clip_grad: 1.0
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 10
+  noise_seed: 0
+  every: 2000
+  batch_size: 64
