@@ -1,6 +1,7 @@
 """Step 6.4 field visualizations on one real test sample (last predicted frame, physical units).
 
 Fig 1 (real-world training):   GT | U-Net baseline (real) | FM U-Net-M sample (K=1) | FM mean (K=5) | FM std over the 5 samples
+                                (the std sits in the error rows, on the |error| colour scale)
                                 rows u, |err u|, v, |err v|
 Fig 2 (zero-shot, simulated):  GT | U-Net baseline (simulated) | FM U-Net-M (simulated, K=5);  rows u, |err u|
 
@@ -101,7 +102,7 @@ def plot(out):
     gt = F["gt"]
     fr, fn = F["fm_real_samples"], F["fm_numerical_samples"]
     rmse = lambda p, c=(0, 1): float(np.sqrt(((p[..., list(c)] - gt[..., list(c)]) ** 2).mean()))
-    tag = f"real test sample #{M['test_index']} (sim {M['sim_id']}, t0 = {M['time_id']}), last predicted frame"
+    tag = f"real test sample #{M['test_index']} (sim {M['sim_id']}, t0 = {M['time_id']}), last predicted frame (20 / 20)"
     CH = {0: "u", 1: "v"}
 
     def field_kw(c):
@@ -118,63 +119,61 @@ def plot(out):
             ax.set_title(title, fontsize=9)
         return im
 
-    def blank(ax, text=""):
-        ax.axis("off")
-        if text:
-            ax.text(0.5, 0.5, text, ha="center", va="center", fontsize=8, color="#666", transform=ax.transAxes)
+    def grid(nrows, ncols, panel_w=3.1):
+        # one extra narrow column on the right holds each row's colorbar; panels are 2:1 (64 x 128)
+        fig = plt.figure(figsize=(panel_w * ncols + 0.9, panel_w / 2 * nrows * 1.32 + 0.6))
+        gs = fig.add_gridspec(nrows, ncols + 1, width_ratios=[1] * ncols + [0.035], wspace=0.06, hspace=0.42)
+        axes = np.array([[fig.add_subplot(gs[r, c]) for c in range(ncols)] for r in range(nrows)])
+        caxes = [fig.add_subplot(gs[r, ncols]) for r in range(nrows)]
+        return fig, axes, caxes
 
-    # ---- Fig 1: real-world training
-    cols = [("Ground truth", gt), (f"U-Net baseline (real)", F["unet_real"]),
+    def off(ax):
+        ax.axis("off")
+
+    # ---- Fig 1: real-world training. Std of the 5 FM samples sits in the error row, on the |error| scale.
+    cols = [("Ground truth", gt), ("U-Net baseline (real)", F["unet_real"]),
             ("FM U-Net-M sample (K=1)", fr[0]), ("FM U-Net-M mean (K=5)", fr.mean(0))]
     std = fr.std(0, ddof=1)
-    fig, axes = plt.subplots(4, 5, figsize=(17, 8.2), gridspec_kw=dict(wspace=0.05, hspace=0.28))
+    fig, axes, caxes = grid(4, 5)
     for r, c in enumerate((0, 1)):
         fa, ea = axes[2 * r], axes[2 * r + 1]
         fkw = field_kw(c)
         errs = [np.abs(p[..., c] - gt[..., c]) for _, p in cols[1:]]
-        emax = float(max(np.quantile(e, 0.995) for e in errs))
-        ekw = dict(cmap="magma", vmin=0, vmax=emax)
+        ekw = dict(cmap="magma", vmin=0, vmax=float(max(np.quantile(e, 0.995) for e in errs)))
         for j, (name, p) in enumerate(cols):
-            sub = "" if j == 0 else f"\nRMSE({CH[c]}) = {rmse(p, (c,)):.4f}"
-            im_f = draw(fa[j], p[..., c], name + sub, **fkw)
-            if j == 0:
-                ea[0].set_xticks([]); ea[0].set_yticks([])
-                for s_ in ea[0].spines.values():
-                    s_.set_visible(False)
-            else:
-                im_e = draw(ea[j], errs[j - 1], **ekw)
-        im_s = draw(fa[4], std[..., c], f"FM std over 5 samples\n(same scale as |error|)", **ekw)
-        blank(ea[4], "–")
-        fa[0].set_ylabel(CH[c], fontsize=11)
-        ea[0].set_ylabel(f"|error {CH[c]}|", fontsize=11)
-        fig.colorbar(im_f, ax=list(fa[:4]), fraction=0.015, pad=0.01).ax.tick_params(labelsize=7)
-        fig.colorbar(im_e, ax=list(ea[1:4]) + [fa[4]], fraction=0.015, pad=0.01).ax.tick_params(labelsize=7)
-    fig.suptitle("Real-world training: " + tag + f"   (FM: N = {M['fm']['N']} Euler, EMA, noise seed {M['fm']['noise_seed']})",
-                 x=0.01, ha="left", fontsize=11)
+            im_f = draw(fa[j], p[..., c], name + ("" if j == 0 else f"\nRMSE({CH[c]}, this frame) = {rmse(p, (c,)):.4f}"), **fkw)
+            if j > 0:
+                im_e = draw(ea[j], errs[j - 1], f"|error {CH[c]}|", **ekw)
+        draw(ea[4], std[..., c], f"FM std of {CH[c]} over 5 samples\n(RMS = {np.sqrt((std[..., c] ** 2).mean()):.4f})", **ekw)
+        off(fa[4]); off(ea[0])
+        fa[0].set_ylabel(CH[c], fontsize=12)
+        ea[1].set_ylabel(f"|error {CH[c]}|", fontsize=10)
+        fig.colorbar(im_f, cax=caxes[2 * r]).ax.tick_params(labelsize=7)
+        fig.colorbar(im_e, cax=caxes[2 * r + 1]).ax.tick_params(labelsize=7)
+    fig.suptitle(f"Real-world training -- {tag}\nFM: N = {M['fm']['N']} Euler, EMA weights, noise seed "
+                 f"{M['fm']['noise_seed']}; K=1 sample = first of the 5 samples. Physical units.", x=0.01, ha="left", fontsize=11)
     fig.savefig(f"{out}/field_real.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # ---- Fig 2: zero-shot (simulated training)
+    # ---- Fig 2: zero-shot (simulated training only)
     cols = [("Ground truth", gt), ("U-Net baseline (simulated)", F["unet_numerical"]),
             ("FM U-Net-M (simulated, K=5)", fn.mean(0))]
-    fig, axes = plt.subplots(2, 3, figsize=(12, 4.6), gridspec_kw=dict(wspace=0.05, hspace=0.3))
+    fig, axes, caxes = grid(2, 3)
     c = 0
     fkw = field_kw(c)
     errs = [np.abs(p[..., c] - gt[..., c]) for _, p in cols[1:]]
     ekw = dict(cmap="magma", vmin=0, vmax=float(max(np.quantile(e, 0.995) for e in errs)))
     for j, (name, p) in enumerate(cols):
-        im_f = draw(axes[0, j], p[..., c], name + ("" if j == 0 else f"\nRMSE(u) = {rmse(p, (c,)):.4f}"), **fkw)
-        if j == 0:
-            axes[1, 0].set_xticks([]); axes[1, 0].set_yticks([])
-            for s_ in axes[1, 0].spines.values():
-                s_.set_visible(False)
-        else:
-            im_e = draw(axes[1, j], errs[j - 1], **ekw)
-    axes[0, 0].set_ylabel("u", fontsize=11)
-    axes[1, 0].set_ylabel("|error u|", fontsize=11)
-    fig.colorbar(im_f, ax=list(axes[0]), fraction=0.02, pad=0.01).ax.tick_params(labelsize=7)
-    fig.colorbar(im_e, ax=list(axes[1, 1:]), fraction=0.02, pad=0.01).ax.tick_params(labelsize=7)
-    fig.suptitle("Zero-shot (simulated training only): " + tag, x=0.01, ha="left", fontsize=11)
+        im_f = draw(axes[0, j], p[..., c], name + ("" if j == 0 else f"\nRMSE(u, this frame) = {rmse(p, (c,)):.4f}"), **fkw)
+        if j > 0:
+            im_e = draw(axes[1, j], errs[j - 1], "|error u|", **ekw)
+    off(axes[1, 0])
+    axes[0, 0].set_ylabel("u", fontsize=12)
+    axes[1, 1].set_ylabel("|error u|", fontsize=10)
+    fig.colorbar(im_f, cax=caxes[0]).ax.tick_params(labelsize=7)
+    fig.colorbar(im_e, cax=caxes[1]).ax.tick_params(labelsize=7)
+    fig.suptitle(f"Zero-shot (simulated training only) -- {tag}\nFM: N = {M['fm']['N']} Euler, EMA weights, "
+                 f"mean of 5 samples. Physical units.", x=0.01, y=1.06, ha="left", fontsize=11)
     fig.savefig(f"{out}/field_zeroshot.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
 
@@ -182,7 +181,8 @@ def plot(out):
                         for n, p in [("unet_real", F["unet_real"]), ("fm_K1", fr[0]), ("fm_K5", fr.mean(0))]},
                "fm_real_std_rms_uv": float(np.sqrt((std[..., :2] ** 2).mean())),
                "zeroshot": {n: {"rmse_u": rmse(p, (0,)), "rmse_uv": rmse(p)}
-                            for n, p in [("unet_numerical", F["unet_numerical"]), ("fm_K5", fn.mean(0))]}}
+                            for n, p in [("unet_numerical", F["unet_numerical"]), ("fm_K5", fn.mean(0))]},
+               "note": "RMSE of the last predicted frame only (physical units)"}
     json.dump(summary, open(f"{out}/sample_rmse.json", "w"), indent=1)
     print(json.dumps(summary, indent=1))
 

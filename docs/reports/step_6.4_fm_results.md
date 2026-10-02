@@ -147,6 +147,51 @@ U-Net-Sv2 仍在訓練中，這張圖是 10-02 的中途狀態。跑完後重新
 
 作廢的 U-Net-S（D-028）：三個設定的 training loss 都停在 0.4–0.5，val 也降不下來。這張圖只是留存。
 
+## 場的視覺化（單一 real 測試樣本）
+
+腳本：`scripts/field_viz.py`。`compute` 階段要用 GPU（job 487418，約 2 分鐘），`plot` 階段只用 CPU。產出放在 `results/fm/phase6_summary/field_viz/`：
+
+| 檔案 | 內容 |
+|---|---|
+| `field_real.png` | 圖 1：real-world training |
+| `field_zeroshot.png` | 圖 2：zero-shot（只用模擬資料訓練） |
+| `fields.npz` | 畫圖用的所有場：GT、兩個 baseline、FM 的 5 個樣本 ×（real, numerical），最後一幀，物理單位 |
+| `meta.json` | 樣本編號、選樣規則、所有 checkpoint 路徑、兩個 repo 的 commit |
+| `sample_rmse.json` | 圖上標的單幀 RMSE |
+
+**樣本怎麼選的**：用 U-Net baseline（real, seed 0）算整個 2.0.1 real 測試集每個樣本的 RMSE（u、v，全部 20 幀），取**中位數**那一個：test #3456，sim `6656.h5`，t0 = 1890，RMSE 0.00877。這是一個典型樣本，不是挑過的。兩張圖用同一個樣本，都畫**最後一個預測幀**（第 20/20 幀），單位是物理單位（反正規化後）。
+
+**使用的模型**
+
+| 欄 | checkpoint |
+|---|---|
+| U-Net baseline (real) | `runs/unet/unet_cylinder_real_False/2026-09-15_20-59-14/model_6800.pth`（Phase 4 的 real seed 0） |
+| U-Net baseline (simulated) | `runs/unet/unet_cylinder_numerical_False/2026-09-15_20-22-46/model_9800.pth`（Phase 4 的 numerical seed 0） |
+| FM U-Net-M (real) | `results/fm/phase6/unet_M_real_s0b/best.pt`（EMA） |
+| FM U-Net-M (simulated) | `results/fm/phase6/unet_M_numerical_s0/best.pt`（EMA） |
+
+FM 的設定是 N = 20 Euler、噪聲 seed 1234。K=1 的樣本就是 5 個樣本中的第一個，所以和 `FMPredictor(K=1, seed=1234)` 對單一樣本的輸出完全相同。K=5 是 5 個樣本的平均；std 是這 5 個樣本的標準差（ddof = 1）。
+
+### 圖 1：real-world training
+
+![field real](../../../pi-lfm/results/fm/phase6_summary/field_viz/field_real.png)
+
+版面：每個變數兩列。上列是場本身，同一列共用色階，以 GT 的 0.5–99.5 百分位為範圍；v 用以 0 為中心的發散色階。下列是 |error|。FM std 放在誤差列，和 |error| **用同一個色階**，這樣採樣的變異可以直接和誤差比大小。
+
+- 這一幀的 RMSE：U-Net baseline u 0.0065 / v 0.0153；FM K=1 是 0.0093 / 0.0210；FM K=5 是 0.0074 / 0.0199。排序和主表一致。
+- **FM 的誤差和 baseline 的誤差位置大致相同**，都集中在尾流的渦結構上。也就是說，兩者在同樣的地方犯錯，FM 並沒有把渦的細節補得更好。
+- **FM 的單次樣本有逐像素的雜點**，自由流區也有。這部分 K=5 平均後大多消失，對應 K 拆解裡的 V。
+- **FM std（RMS 0.0069）比誤差小得多**，而且分布在尾流整區，不是集中在誤差最大的地方。和 K 拆解 V/A < 1 一致：模型的採樣分散度不足以涵蓋它實際的誤差。
+- **邊界效應（只看了這一個樣本）**：FM K=1 在最外圈 1 像素的平均誤差是內部的 2.4 倍（0.0186 vs 0.0078），K=5 是 1.4 倍。往內一格就恢復正常，例如第 1 列是 0.004。U-Net baseline 沒有這個現象（0.95 倍）。可能和卷積在邊界的 zero padding 有關，要在整個測試集上確認後才能下結論。
+
+### 圖 2：zero-shot（只用模擬資料訓練）
+
+![field zero-shot](../../../pi-lfm/results/fm/phase6_summary/field_viz/field_zeroshot.png)
+
+- 這一幀的 RMSE(u)：U-Net baseline 0.0408，FM K=5 是 0.0258，和主表 numerical 列「FM 比 baseline 好」的方向一致。
+- **兩者錯的方式不同**：U-Net baseline 的場很平滑，但渦的位置和形狀都錯了，誤差是大塊的結構性誤差。FM 的大尺度結構比較接近（尾流的寬度和位置），但整張圖蓋著一層雜點。
+- **這層雜點就是 FM 學去生成的模擬噪聲**：numerical 訓練時，官方的乘性高斯噪聲（0.1 × 場）也加在目標上（5.0 已知影響 (2)）。5 個樣本平均後雜點還是很明顯，自由流的 u 約 0.2，0.1 倍就是約 0.02，平均 5 次後約 0.009。這和「只對條件加噪」的版本在 numerical 上好 7–9% 一致。
+
 ## 異常與與預期不符之處
 
 1. **U-Net-S（base_ch 40）作廢，Sv2 重訓中（D-028）**。U-Net 第一層把 y_t（每像素 60 維）和 cond 壓到 base_ch 個通道，40 < 60 時 y_t 的逐像素噪聲傳不過去。三個設定的訓練 loss 都卡在 0.4–0.5（M 檔降到 0.02），測試 RMSE 約 0.085，**比 persistence 還差**；K 拆解的 V/A = 34，代表模型輸出的幾乎只是噪聲。舊結果另列在完整表的「INVALID」區塊。新設定 **U-Net-Sv2** 是 base_ch 72、channel_mult 1-1-2-2、9.34M，job 487143（numerical）和 487144（real），finetune 和 eval 會由 `jobs/queue/phase6_sv2.q` 自動送出。跑完重新執行 `summarize_phase6.py`，表格就會更新。
