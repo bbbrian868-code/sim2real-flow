@@ -2,7 +2,7 @@
 
 資料集 cylinder，dataset 2.0.1，real 測試集，N_ar = 1。指標全部用官方 `eval_metrics` 計算：評估 u、v 兩個通道，4827 個樣本，metric_batch_size = 全部，所以 RMSE = √(全域平均平方誤差)。
 
-完整表：`results/fm/phase6_summary/phase6_summary.md`（CSV：`phase6_main.csv`、`phase6_K_decomposition.csv`、`phase6_N_sweep.csv`、`phase6_update_ratio.csv`；圖：`phase6_val_curves.png`）。
+完整表：`results/fm/phase6_summary/phase6_summary.md`（CSV：`phase6_main.csv`、`phase6_K_decomposition.csv`、`phase6_N_sweep.csv`、`phase6_update_ratio.csv`；舊版總覽圖：`phase6_val_curves.png`，已由下面的 `curves/` 取代）。
 腳本：`scripts/summarize_phase6.py`。每個 run 一個 JSON：`results/fm/phase6_test/`，內含兩個 repo 的 commit、dataset_version、config 全文與 sha256、seed、checkpoint 路徑。
 
 ## 共同設定（每張表都適用）
@@ -63,6 +63,89 @@ RMSE，K = 1 / K = 5：
 4. **finetune 沒有幫助 FM（但用的是非論文設定，見 D-030）**：所有 FM finetune 都比同 backbone 的 real 差，Update Ratio 全部是 not reached。U-Net-M real 在第 50k 步仍在進步，finetune 第 20k 步也仍在進步。原因很可能是 finetune 的預算（20k 步、lr × 0.3，D-024）比 real 的 50k 步少很多，而不是預訓練有害。這個比較目前不公平，需要你決定是否要讓 finetune 跑到相同預算（見待決事項）。
 5. **6.3 第 4 項（只對條件加噪）**：numerical 設定明顯變好（U-Net-M 0.0337 → 0.0308，−8.6%；DiT-M 0.0393 → 0.0365，−7.2%；都是 seed 0、K = 1）。也就是說，**目標含 sim 加噪確實讓 FM 學去生成那種噪聲**，符合 5.0 已知影響 (2) 的預期。但 finetune 之後差異就消失了：U-Net-M 0.0172 vs 0.0170，DiT-M 0.0169 vs 0.0171。
 6. **6.3 第 1 項（N 掃描）**：RMSE 隨 N 增加而**微幅變差**。以 seed 0、K = 1 為例：DiT-M real 在 N = 10/20/50 分別是 0.0153 / 0.0158 / 0.0162，U-Net-M real 幾乎不變（0.01487 / 0.01484 / 0.01488）。這符合「步數少 → Euler 誤差偏向平滑 → 比較接近條件均值」的解釋，所以 RMSE 低不代表樣本品質好。正式表格維持 N = 20。
+
+## 訓練曲線與 eval 曲線
+
+圖檔：`results/fm/phase6_summary/curves/*.png`，由 `scripts/plot_phase6_curves.py` 產生。資料全部來自每個 run 目錄裡的 `log.jsonl`，不需要另外重算。
+
+**每張分組圖的讀法**：三欄是 numerical / real / finetune，三列分別是：
+1. **training loss**：FM 速度場 MSE，`log.jsonl` 裡帶 `loss` 的行，每 50 步記一次單一 batch 的值。細線是原始值，粗線是 1000 步的移動平均。
+2. **grad norm**：clip 1.0 之前的梯度範數（`grad_norm`），1000 步移動平均。用來看 DiT 的發散（D-029）。
+3. **eval curve**：val RMSE，`log.jsonl` 裡帶 `val` 的行，每 2000 步一次。用 536 筆 val 子集、N = 10、K = 1、EMA 權重。這就是選 checkpoint 用的曲線，**★ 是 best.pt**，也就是測試表用的那個 checkpoint。
+
+顏色代表 seed（藍 = 0、橘 = 1、綠 = 2），所有圖都一樣。val 是 536 筆子集、N = 10，所以它的數值和測試表（4827 筆、N = 20）不能直接比。
+
+### 圖與檔案的對應
+
+`$P = /work/b314513067/pi-lfm/results/fm`
+
+| 圖 | 對應主表 / 段落 | 使用的 run（每個都在 `$P/phase6/<run>/`，含 `log.jsonl`、`run_meta.json`、`best.pt`） | 測試結果 JSON |
+|---|---|---|---|
+| `curves/unet_M.png` | 主表 FM U-Net-M | `unet_M_{numerical_s0, numerical_s1, numerical_s2}`、`unet_M_{real_s0b, real_s1, real_s2}`、`unet_M_{finetune_s0, finetune_s1, finetune_s2}` | `$P/phase6_test/<run>_N20_K{1,5}.json` |
+| `curves/dit_M.png` | 主表 FM DiT-M | `dit_M_{numerical_s0b, numerical_s1, numerical_s2}`、`dit_M_{real_s0b, real_s1, real_s2}`、`dit_M_{finetune_s0, finetune_s1, finetune_s2}` | 同上 |
+| `curves/unet_L.png` | 大小比較 U-Net-L | `unet_L_{numerical, real, finetune}_s0` | 同上 |
+| `curves/dit_L.png` | 大小比較 DiT-L | `dit_L_{numerical, real, finetune}_s0` | 同上 |
+| `curves/dit_S.png` | 大小比較 DiT-S | `dit_S_{numerical, real, finetune}_s0` | 同上 |
+| `curves/unet_Sv2.png` | 大小比較 U-Net-S（重訓中，D-028） | `unet_Sv2_{numerical, real}_s0`（訓練中）、`unet_Sv2_finetune_s0`（排隊中） | 尚未產生 |
+| `curves/unet_M_condnoise.png` | 觀察 5（6.3 第 4 項） | `unet_M_condnoise_{numerical, finetune}_s0` | 同上 |
+| `curves/dit_M_condnoise.png` | 觀察 5（6.3 第 4 項） | `dit_M_condnoise_{numerical, finetune}_s0` | 同上 |
+| `curves/unet_S.png` | 作廢（D-028），僅留存 | `unet_S_{numerical, real, finetune}_s0` | 同上（INVALID 區塊） |
+| `curves/size_overview.png` | 大小比較 | 上面各組的 seed 0，只畫 eval curve | – |
+
+說明：
+- seed 0 的 M 檔 real（兩個 backbone）和 DiT-M numerical 是 `*_s0b`：原本的 `*_s0` 送件失敗，目錄裡只有空的 log，所以重送到 `_s0b`。`unet_M_numerical_s0` 本身就是完整的 run。
+- finetune 的起點寫在各 run 的 `run_meta.json` 的 `init_from`。例如 `dit_M_finetune_s0` 的起點是 `dit_M_numerical_s0b/best.pt`。
+- K 拆解、N 掃描、Update Ratio 用的 JSON 分別在 `phase6_test/`、`phase6_ablation/N_sweep/`，以及上面這些 `log.jsonl`。
+
+### U-Net-M
+
+![U-Net-M curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_M.png)
+
+- 三個 seed 幾乎重疊，grad norm 平穩下降，沒有不穩定。
+- **numerical**：val 在約 22k 步最低（★），之後慢慢變差，但 training loss 還在降。也就是模擬資料訓練越久，對 real val 反而越不利，和 baseline 的 early-peak 現象一致。
+- **real**：val 到 50k 步仍在下降，★ 就在最後一步，表示預算還不夠（異常 4）。
+- **finetune**：起點的 val 已經在 0.018 左右，20k 步結束時還在下降，★ 也在最後一步。這是「20k 步、lr × 0.3 不夠」（D-030）的直接證據。
+
+### DiT-M
+
+![DiT-M curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_M.png)
+
+- **numerical**：val 在第 2000 步最低（★），之後一路變差，從 0.038 升到 0.044，training loss 卻幾乎不動。和 U-Net 比起來，DiT 更快 overfit 到模擬資料。
+- **real**：約 27k 步時三個 seed 同時發散：grad norm 從 0.1 跳到 10⁴–10⁸，training loss 回到約 1，val RMSE 跳到約 0.13。★ 都在發散前（20k–26k 步），所以測試數字有效（D-029）。
+- **finetune**：grad norm 平穩，沒有發散，20k 步結束時 val 仍在下降。
+
+### 大小比較（seed 0，只畫 eval curve）
+
+![size overview](../../../pi-lfm/results/fm/phase6_summary/curves/size_overview.png)
+
+- U-Net：real 是 L < M < Sv2（Sv2 還在訓練），finetune 是 L < M（Sv2 還沒開始跑）。L 從第一個評估點就比較好。
+- DiT：real 在發散前 M 和 L 幾乎重疊，S 稍高。發散的時間點不固定：S 在 numerical 第 26k 步、finetune 第 4k 步；L 在 real 第 18k 步。DiT-S finetune 的 ★ 因此停在第 2000 步。
+
+### 其他大小與消融
+
+![U-Net-L curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_L.png)
+
+![DiT-L curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_L.png)
+
+![DiT-S curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_S.png)
+
+DiT-S finetune 從一開始 grad norm 就持續上升，從 0.5 升到約 2500 步時的 10²，之後發散，所以 ★ 停在第 2000 步。numerical 則是在 24k–26k 步突然發散。
+
+![U-Net-Sv2 curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_Sv2.png)
+
+U-Net-Sv2 仍在訓練中，這張圖是 10-02 的中途狀態。跑完後重新執行 `plot_phase6_curves.py` 即可更新。舊 U-Net-S 的 training loss 停在 0.4–0.5，Sv2 的 real 已經降到約 0.05，寬度不足的問題已經排除。
+
+![U-Net-M condnoise curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_M_condnoise.png)
+
+![DiT-M condnoise curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_M_condnoise.png)
+
+只對條件加噪的版本沒有 real 欄：real 資料本來就沒有模擬噪聲，所以 real 和基礎版完全相同。
+
+**numerical 的 training loss 直接印證 5.0 的已知影響 (2)**：U-Net-M 只對條件加噪時，loss 降到約 0.02；基礎版（目標也加噪）停在約 0.18。DiT-M 也一樣，基礎版約 0.16。多出來的這一截，就是模型在學著生成目標上的乘性模擬噪聲，而這部分無法從輸入預測。
+
+![U-Net-S curves (INVALID)](../../../pi-lfm/results/fm/phase6_summary/curves/unet_S.png)
+
+作廢的 U-Net-S（D-028）：三個設定的 training loss 都停在 0.4–0.5，val 也降不下來。這張圖只是留存。
 
 ## 異常與與預期不符之處
 
