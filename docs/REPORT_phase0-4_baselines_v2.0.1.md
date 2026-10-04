@@ -198,6 +198,12 @@
 
 ---
 
+### 5.5 補充：numerical 用模擬訓練 loss 選點（10-04，D-031）
+
+5.2 的 numerical 列用官方的 real val 選點，但 simulated training 嚴格來說不該用 real 資料選點。改用模擬訓練 loss 最小選點（seed 0）後，test RMSE：U-Net 0.03711 → 0.03714（+0.08%）、DeepONet 0.05740 → 0.05986（+4.3%）、Transolver 0.05454 → 0.05864（+7.5%）。模擬 loss 一路降到最後，所以這幾乎等於「訓練到底」；DeepONet 和 Transolver 在 real val 上很早就到最低點，訓練越久對 real 越差。real val 選點的數字應視為上限（val 和 test 約 75% 時間窗重疊）。完整記錄：`docs/reports/exp_sim_trainloss_selection.md`；結果：`$R/v2.0.1/sim_trainloss_sel/`。
+
+![sim train loss vs real val selection](figures/phase4/sim_trainloss_selection.png)
+
 ## 6. 偏離任務清單的地方（完整理由見 `DECISIONS.md`）
 
 | # | 內容 |

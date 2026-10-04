@@ -72,5 +72,19 @@ RealPDEBench 官方指標（https://realpdebench.github.io/metrics/data-oriented
 
 結果：`results/v2.0.1/phase4_update_ratio.csv`；腳本：`scripts/update_ratio.py`。**和論文的數值不可直接比較**：用官方 checkpoint 的 val 曲線，以任何常見算法都無法重現論文的 0.3636 / 0.5758 / 1.0（見 D-026）。
 
+## 補充實驗：numerical 的 checkpoint 改用模擬訓練 loss 選（10-04，D-031）
+
+完整記錄見 [exp_sim_trainloss_selection.md](exp_sim_trainloss_selection.md)。上面 Test 結果的 numerical 列用的是官方的 real val 選點；在嚴格的 zero-shot 定義下不該用 real 資料，所以補做「用模擬訓練 loss 最小選點」，seed 0，2.0.1 real test：
+
+| 模型 | real val 選點（上表） | 模擬訓練 loss 選點 | ΔRMSE |
+|---|---|---|---|
+| U-Net | 9800 步，RMSE 0.03711 | 8400 步，RMSE 0.03714 | +0.08% |
+| DeepONet | 1300 步，RMSE 0.05740 | 4900 步，RMSE 0.05986 | +4.3% |
+| Transolver | 1100 步，RMSE 0.05454 | 4900 步，RMSE 0.05864 | +7.5% |
+
+- 模擬訓練 loss 一路降到最後，所以這種選法幾乎等於「訓練到底」；改用 5 倍視窗或直接取最後一個，結果都差不多。
+- U-Net 不受影響；DeepONet、Transolver 變差，因為它們在 real val 上很早就到最低點（early-peak）。
+- real val 選點的數字應視為上限：val 和 test 高度重疊（Step 1.3），而且 Transolver 的 val 曲線雜訊很大。
+
 ## 尚未完成
 - DeepONet 的多 seed：任務說「之後再補 seed」，目前只有 1 個。

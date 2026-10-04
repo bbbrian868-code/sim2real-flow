@@ -6,5 +6,6 @@ Snapshots of the figures used in the reports (copied from the results directory,
 | `phase6/field_real.png`, `phase6/field_zeroshot.png` | `fm/phase6_summary/field_viz/` | `scripts/field_viz.py` |
 | `phase4/phase4_val_curves.png` | `v2.0.1/phase4_val_curves.png` | `scripts/plot_phase4_curves.py` |
 | `phase4/val_curves_summary.png` | `v2.0.1/val_curves_summary.png` | `scripts/plot_val_curves.py` |
+| `phase4/sim_trainloss_selection.png` | `v2.0.1/sim_trainloss_sel/curves.png` | `scripts/summarize_sim_trainloss_sel.py` |
 
 After regenerating a figure, copy it here again.
