@@ -66,7 +66,7 @@ RMSE，K = 1 / K = 5：
 
 ## 訓練曲線與 eval 曲線
 
-圖檔：`results/fm/phase6_summary/curves/*.png`，由 `scripts/plot_phase6_curves.py` 產生。資料全部來自每個 run 目錄裡的 `log.jsonl`，不需要另外重算。
+圖檔：`results/fm/phase6_summary/curves/*.png`，由 `scripts/plot_phase6_curves.py` 產生。報告裡顯示的圖是複製到 `docs/figures/phase6/` 的快照（選擇原則見 `docs/figures/README.md`）；其餘的圖只留在 results 目錄，下面以文字路徑標示。資料全部來自每個 run 目錄裡的 `log.jsonl`，不需要另外重算。
 
 **每張分組圖的讀法**：三欄是 numerical / real / finetune，三列分別是：
 1. **training loss**：FM 速度場 MSE，`log.jsonl` 裡帶 `loss` 的行，每 50 步記一次單一 batch 的值。細線是原始值，粗線是 1000 步的移動平均。
@@ -99,7 +99,7 @@ RMSE，K = 1 / K = 5：
 
 ### U-Net-M
 
-![U-Net-M curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_M.png)
+![U-Net-M curves](../figures/phase6/curves_unet_M.png)
 
 - 三個 seed 幾乎重疊，grad norm 平穩下降，沒有不穩定。
 - **numerical**：val 在約 22k 步最低（★），之後慢慢變差，但 training loss 還在降。也就是模擬資料訓練越久，對 real val 反而越不利，和 baseline 的 early-peak 現象一致。
@@ -108,7 +108,7 @@ RMSE，K = 1 / K = 5：
 
 ### DiT-M
 
-![DiT-M curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_M.png)
+![DiT-M curves](../figures/phase6/curves_dit_M.png)
 
 - **numerical**：val 在第 2000 步最低（★），之後一路變差，從 0.038 升到 0.044，training loss 卻幾乎不動。和 U-Net 比起來，DiT 更快 overfit 到模擬資料。
 - **real**：約 27k 步時三個 seed 同時發散：grad norm 從 0.1 跳到 10⁴–10⁸，training loss 回到約 1，val RMSE 跳到約 0.13。★ 都在發散前（20k–26k 步），所以測試數字有效（D-029）。
@@ -116,34 +116,34 @@ RMSE，K = 1 / K = 5：
 
 ### 大小比較（seed 0，只畫 eval curve）
 
-![size overview](../../../pi-lfm/results/fm/phase6_summary/curves/size_overview.png)
+![size overview](../figures/phase6/curves_size_overview.png)
 
 - U-Net：real 和 finetune 都是 L < M < Sv2，L 從第一個評估點就比較好。
 - DiT：real 在發散前 M 和 L 幾乎重疊，S 稍高。發散的時間點不固定：S 在 numerical 第 26k 步、finetune 第 4k 步；L 在 real 第 18k 步。DiT-S finetune 的 ★ 因此停在第 2000 步。
 
 ### 其他大小與消融
 
-![U-Net-L curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_L.png)
+（圖未放進 repo：`results/fm/phase6_summary/curves/unet_L.png`）
 
-![DiT-L curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_L.png)
+（圖未放進 repo：`results/fm/phase6_summary/curves/dit_L.png`）
 
-![DiT-S curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_S.png)
+![DiT-S curves](../figures/phase6/curves_dit_S.png)
 
 DiT-S finetune 從一開始 grad norm 就持續上升，從 0.5 升到約 2500 步時的 10²，之後發散，所以 ★ 停在第 2000 步。numerical 則是在 24k–26k 步突然發散。
 
-![U-Net-Sv2 curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_Sv2.png)
+![U-Net-Sv2 curves](../figures/phase6/curves_unet_Sv2.png)
 
 U-Net-Sv2 已訓練完成（10-02）。舊 U-Net-S 的 training loss 停在 0.4–0.5，Sv2 正常下降，寬度不足的問題已經排除。測試 RMSE 依大小排序為 Sv2 > M > L，例如 real K=1 是 0.0170 / 0.0147 / 0.0128。和其他大小一樣，finetune（20k 步、lr × 0.3）比 real 差，Update Ratio 為 not reached。
 
-![U-Net-M condnoise curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_M_condnoise.png)
+![U-Net-M condnoise curves](../figures/phase6/curves_unet_M_condnoise.png)
 
-![DiT-M condnoise curves](../../../pi-lfm/results/fm/phase6_summary/curves/dit_M_condnoise.png)
+（圖未放進 repo：`results/fm/phase6_summary/curves/dit_M_condnoise.png`）
 
 只對條件加噪的版本沒有 real 欄：real 資料本來就沒有模擬噪聲，所以 real 和基礎版完全相同。
 
 **numerical 的 training loss 直接印證 5.0 的已知影響 (2)**：U-Net-M 只對條件加噪時，loss 降到約 0.02；基礎版（目標也加噪）停在約 0.18。DiT-M 也一樣，基礎版約 0.16。多出來的這一截，就是模型在學著生成目標上的乘性模擬噪聲，而這部分無法從輸入預測。
 
-![U-Net-S curves (INVALID)](../../../pi-lfm/results/fm/phase6_summary/curves/unet_S.png)
+（圖未放進 repo：`results/fm/phase6_summary/curves/unet_S.png`）
 
 作廢的 U-Net-S（D-028）：三個設定的 training loss 都停在 0.4–0.5，val 也降不下來。這張圖只是留存。
 
@@ -174,7 +174,7 @@ FM 的設定是 N = 20 Euler、噪聲 seed 1234。K=1 的樣本就是 5 個樣�
 
 ### 圖 1：real-world training
 
-![field real](../../../pi-lfm/results/fm/phase6_summary/field_viz/field_real.png)
+![field real](../figures/phase6/field_real.png)
 
 版面：每個變數兩列。上列是場本身，同一列共用色階，以 GT 的 0.5–99.5 百分位為範圍；v 用以 0 為中心的發散色階。下列是 |error|。FM std 放在誤差列，和 |error| **用同一個色階**，這樣採樣的變異可以直接和誤差比大小。
 
@@ -186,7 +186,7 @@ FM 的設定是 N = 20 Euler、噪聲 seed 1234。K=1 的樣本就是 5 個樣�
 
 ### 圖 2：zero-shot（只用模擬資料訓練）
 
-![field zero-shot](../../../pi-lfm/results/fm/phase6_summary/field_viz/field_zeroshot.png)
+![field zero-shot](../figures/phase6/field_zeroshot.png)
 
 - 這一幀的 RMSE(u)：U-Net baseline 0.0408，FM K=5 是 0.0258，和主表 numerical 列「FM 比 baseline 好」的方向一致。
 - **兩者錯的方式不同**：U-Net baseline 的場很平滑，但渦的位置和形狀都錯了，誤差是大塊的結構性誤差。FM 的大尺度結構比較接近（尾流的寬度和位置），但整張圖蓋著一層雜點。

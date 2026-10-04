@@ -109,6 +109,9 @@
 （最佳點：2.0.0 val → 2.0.1 val；seed 0 重訓 run 的 50 個中間 checkpoint 全部重評）
 
 - **曲線圖**：`$R/v2.0.1/val_curves_summary.png`（舊 val 的存檔曲線 vs 新 val 的重評曲線，3×3）；表：`val_curves_summary.csv`
+
+  ![Step 3.4 val curves](figures/phase4/val_curves_summary.png)
+
 - 每個點的全部指標：`$R/v2.0.1/val_curves/{model}__{exp}__{ts}.json`（U-Net 那 3 條另有 `.json.partial`：前 47 個點是從 slurm log 取回的 6 位小數值，見 §7）
 - 控制組（舊 val 重算 vs checkpoint 存檔，50 個點，最大相對差異 1.55e-7）：`$R/v2.0.0/val_curves_control/`
 - slurm log：`$R/slurm/vc-*`、`vc2-*`
@@ -141,6 +144,9 @@
 - 完整表（含 fRMSE low/mid/high 的 mean ± std）：`$R/v2.0.1/phase4_test_summary.md`
 - 每個 checkpoint 一個 JSON：`$R/v2.0.1/phase4_test/{model}_{setting}_s{seed}.json`；job 清單：`pi-lfm-code/jobs/phase4_test.json`；slurm log：`$R/slurm/p4-test-475155.*`
 - **學習曲線（所有 seed，2.0.1 val RMSE）**：`$R/v2.0.1/phase4_val_curves.png`；每個 run 的最佳點：`phase4_val_curves.csv`
+
+  ![Phase 4 val curves](figures/phase4/phase4_val_curves.png)
+
 
 ### 5.3 每個 run 的 checkpoint、log、曲線位置
 
