@@ -1,14 +1,41 @@
-# pi-lfm-code
+# sim2real-flow
 
-Code for RealPDEBench cylinder experiments (2.0.1 migration, baselines, flow matching).
-Code only; no data or checkpoints.
+Flow matching for sim-to-real spatiotemporal prediction on [RealPDEBench](https://github.com/AI4Science-WestlakeU/RealPDEBench) (cylinder wake).
+Research code, work in progress.
 
-| What | Path |
+Current contents:
+- **RealPDEBench 2.0.1 migration**: remote/local diff of the dataset, split and integrity checks, re-evaluation of the 2.0.0 checkpoints.
+- **Baselines**: U-Net, DeepONet and Transolver retrained on 2.0.1 (numerical / real / finetune), evaluated through a mirror of the official evaluation loop.
+- **Basic flow matching**: rectified flow (linear path, Gaussian source, Euler sampler) with U-Net and DiT backbones in three sizes; Phase 6 results, ablations (Euler steps N, number of samples K, sim noise on the condition only), training/eval curves and field visualizations.
+
+Code only: no data, checkpoints or result files are tracked (see `.gitignore`).
+
+## Layout
+
+| Path | Contents |
 |---|---|
-| Official RealPDEBench repo | /work/b314513067/RealPDEBench |
-| Data, checkpoints, results | /work/b314513067/pi-lfm |
+| `fm/` | flow matching: `paths.py` (loss, Euler sampler), `embed.py`, `backbones/` (U-Net, DiT), `wrapper.py` (`FMPredictor`, official-model interface), `train_fm.py`, `configs/cylinder/`, `tests/` |
+| `pilfm/` | shared tooling: fast zero-copy dataset, mirror of the official eval loop, result metadata |
+| `scripts/` | evaluation, summaries, plots, data checks; `legacy/` holds the scripts of the 2.0.0 runs |
+| `configs/cylinder/` | official baseline configs as used (paths and seeds changed) |
+| `slurm/` | job scripts for the NCHC Nano4 cluster |
+| `jobs/` | job lists and submission queues |
+| `patches/` | local modification of the official package, as a diff |
+| `docs/` | task reports (`reports/step_*.md`), `DECISIONS.md` (every non-obvious choice, with reasons), consolidated Phase 0-4 report |
 
-- `configs/cylinder/` — copied from `pi-lfm/configs/cylinder` (configs used for the 2.0.0 runs; originals left in place).
-- `scripts/legacy/` — copied from the gitignored `RealPDEBench/scripts/` plus the untracked
-  `download_cylinder.sh`, `env.sh`, `setup_env.sh` from the official repo root (originals left in place).
-- `patches/` — local modification present in the official repo working tree, recorded as a diff.
+## Setup
+
+Requires the official RealPDEBench package (commit `62f4c80`, plus `patches/`) installed in the same environment, and the dataset from
+[Hugging Face](https://huggingface.co/datasets/AI4Science-WestlakeU/RealPDEBench) (version 2.0.1).
+
+Paths to the data, checkpoints and results are currently hard-coded for our cluster (`/work/<user>/...`) and the
+job scripts carry our cluster account; they need to be changed to run elsewhere.
+
+## License and attribution
+
+Released under [CC BY-NC 4.0](LICENSE) (non-commercial use only). Parts of this repository are adapted from
+RealPDEBench (CC BY-NC 4.0); [NOTICE](NOTICE) lists the adapted files and what was changed.
+The RealPDEBench dataset is not included and is distributed by its authors under CC BY-NC 4.0.
+
+If you use the benchmark, please cite RealPDEBench:
+"RealPDEBench: A Benchmark for Complex Physical Systems with Real-World Data", ICLR 2026, [arXiv:2601.01829](https://arxiv.org/abs/2601.01829).

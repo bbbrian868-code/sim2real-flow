@@ -1,1 +1,0 @@
-WAIT:/work/b314513067/pi-lfm/results/fm/phase6/unet_M_real_s2/done.json sbatch --parsable --job-name=ev-unet_M_real_s2 slurm/eval.sh scripts/eval_fm.py --run /work/b314513067/pi-lfm/results/fm/phase6/unet_M_real_s2 --data-root /work/b314513067/pi-lfm/data_v2.0.1 --out-dir /work/b314513067/pi-lfm/results/fm/phase6_test --nk 20,1 20,5

@@ -1,5 +1,7 @@
 """Zero-copy subclass of the official CylinderHFDataset.
 
+Adapted from RealPDEBench (CC BY-NC 4.0, commit 62f4c80); see NOTICE.
+
 The official __getitem__ (fluid_hf_dataset.py:261-338) materializes a whole trajectory row
 (`self.trajectories[traj_idx]`, ~0.5 GB per field for numerical) to slice 40 frames out of it.
 Here the same slice is taken directly from the memory-mapped Arrow buffer. Everything else --

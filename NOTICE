@@ -1,0 +1,41 @@
+sim2real-flow
+Copyright (c) 2026 the sim2real-flow authors
+
+This repository is released under the Creative Commons Attribution-NonCommercial 4.0
+International license (CC BY-NC 4.0); see LICENSE. Non-commercial use only.
+
+Third-party material
+--------------------
+Parts of this repository are adapted from RealPDEBench
+(https://github.com/AI4Science-WestlakeU/RealPDEBench, commit 62f4c80ab17f78933d046f2b038531dbc6a478a0),
+which is licensed under CC BY-NC 4.0. The RealPDEBench paper: "RealPDEBench: A Benchmark for Complex
+Physical Systems with Real-World Data", ICLR 2026 (arXiv:2601.01829).
+
+Adapted files and the changes made:
+
+  pilfm/fast_dataset.py
+      Subclass of realpdebench.data.fluid_hf_dataset.CylinderHFDataset. The sample construction of the
+      official __getitem__ (channel stacking, mask draw, noise draws and their order) is copied line for
+      line; changed: frames are sliced directly from the memory-mapped Arrow buffer instead of
+      materializing a whole trajectory row, and an optional on-disk cache of the subsampled trajectories.
+
+  pilfm/official_eval.py
+      The test loop of realpdebench/eval.py (lines 290-352) and the validation loop of
+      realpdebench/train.py (lines 345-373), re-implemented so that any predictor can be evaluated;
+      changed: the predictor is a parameter, datasets are shared across checkpoints. Metrics are computed
+      by the unmodified official realpdebench.utils.metrics.eval_metrics.
+
+  configs/cylinder/*.yaml
+      Official RealPDEBench cylinder configs; changed: dataset/results paths, seed, num_workers,
+      exp_name suffix, finetune checkpoint_path (see docs/DECISIONS.md, D-018).
+
+  patches/official_62f4c80_fluid_hf_dataset_sim_id_column.patch
+      A local modification of the official realpdebench/data/fluid_hf_dataset.py, recorded as a diff.
+
+The official package itself is not included; it is installed separately and used unmodified
+(apart from the patch above).
+
+Data and checkpoints
+--------------------
+No data or model checkpoints are included. The RealPDEBench dataset is distributed by its authors on
+Hugging Face (AI4Science-WestlakeU/RealPDEBench) under CC BY-NC 4.0 and must be obtained from there.

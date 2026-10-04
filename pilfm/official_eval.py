@@ -1,5 +1,7 @@
 """Evaluation that reproduces the official pipeline for any predictor, without touching the official package.
 
+Adapted from RealPDEBench (CC BY-NC 4.0, commit 62f4c80); see NOTICE.
+
 `run_test` mirrors realpdebench/eval.py:290-352 (test loop + eval_metrics) and `run_val` mirrors
 realpdebench/train.py:345-373 (validation loop). Datasets, normalizer, model construction and metrics are
 imported from the official package unchanged.
