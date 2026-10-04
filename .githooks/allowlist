@@ -1,0 +1,1 @@
+# Path globs exempt from the data-policy hooks (one per line). Every entry needs a reason in its commit message.

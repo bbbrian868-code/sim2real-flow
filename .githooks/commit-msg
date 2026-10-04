@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Data policy check on the commit message (see rules.sh).
+set -uo pipefail
+. "$(git rev-parse --show-toplevel)/.githooks/rules.sh"
+grep -v '^#' "$1" | check_text "commit message" || { blocked_msg; exit 1; }

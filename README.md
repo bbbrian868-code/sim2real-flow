@@ -31,6 +31,27 @@ Requires the official RealPDEBench package (commit `62f4c80`, plus `patches/`) i
 Paths to the data, checkpoints and results are currently hard-coded for our cluster (`/work/<user>/...`) and the
 job scripts carry our cluster account; they need to be changed to run elsewhere.
 
+## Data policy
+
+This repository contains algorithm code and experiments on **public** datasets only (currently RealPDEBench).
+**Partner or confidential data must never be committed here, even though the repository is private**, and
+neither may anything derived from it: geometry, dimensions, operating conditions, material or device names,
+preprocessing or hyperparameters tuned on it, results, figures, logs or notebook outputs. Code that works with
+such data belongs in a separate repository on approved infrastructure, which imports this one, not the other way around.
+
+Git hooks in `.githooks/` enforce part of this (data / model / CAD / CFD / office file types, files over 2 MB,
+restricted directory names, credentials, project-specific sensitive terms) on commit, on the commit message,
+and again on push. After cloning, enable them and create the local term list:
+
+```bash
+git config core.hooksPath .githooks
+# one term per line, case-insensitive; kept inside .git/ so it is never committed (ask the maintainer for the list)
+$EDITOR .git/sensitive-terms
+```
+
+Do not bypass the hooks with `--no-verify`; for a reviewed exception add a path glob to `.githooks/allowlist`.
+The hooks are a safety net, not a guarantee: they cannot recognise every derived quantity.
+
 ## License and attribution
 
 Released under [CC BY-NC 4.0](LICENSE) (non-commercial use only). Parts of this repository are adapted from
