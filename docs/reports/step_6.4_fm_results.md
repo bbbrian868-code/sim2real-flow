@@ -12,7 +12,7 @@
 - **目標是否含 sim 加噪**：官方的乘性高斯噪聲（scale 0.1）同時加在輸入和目標上，而且只對 numerical 資料（Step 0.2）。所以 numerical 和 finetune（預訓練階段）是 **「目標含 sim 加噪」**；real 設定沒有 sim 資料，不受影響。
 - **√2 理論差距（5.0 已知影響 (1)）**：如果模型完美學到 p(y|c)，單次採樣的 MSE 是條件均值的 2 倍，RMSE 差 √2 = 1.414 倍；K = 5 平均時差 √1.2 = 1.095 倍。U-Net baseline 是確定性回歸，理想上會逼近條件均值。所以 **FM 的 K = 1 數字天生比 baseline 吃虧**，實際觀測到的差距見後面的 K 拆解。
 - **訓練預算**：numerical 和 real 都是 50k 步；finetune 從 numerical 最佳點的 EMA 權重接續，20k 步，lr × 0.3（D-023、D-024）。
-- **大小**：U-Net-M 38.8M、U-Net-L 125.5M、DiT-S 9.9M、DiT-M 39.1M、DiT-L 119.4M（D-012、D-019；DiT 的 patch 是 2，偏離規格）。**U-Net-S 作廢，Sv2 重訓中**（見異常 1）。
+- **大小**：U-Net-M 38.8M、U-Net-L 125.5M、DiT-S 9.9M、DiT-M 39.1M、DiT-L 119.4M（D-012、D-019；DiT 的 patch 是 2，偏離規格）。**U-Net-S 作廢，改用 U-Net-Sv2（9.34M），已於 10-02 重訓完成**（見異常 1）。
 
 ## 主表：M 檔（3 seeds，mean ± std）與對照
 
@@ -43,7 +43,7 @@ RMSE，K = 1 / K = 5：
 
 | backbone | 大小 | numerical | real | finetune |
 |---|---|---|---|---|
-| U-Net | S | 作廢（D-028） | 作廢 | 作廢 |
+| U-Net | Sv2（取代 S，D-028） | 0.0365 / 0.0321 | 0.0170 / 0.0142 | 0.0186 / 0.0141 |
 | U-Net | M | 0.0335 / 0.0300 | 0.0147 / 0.0135 | 0.0168 / 0.0136 |
 | U-Net | L | 0.0307 / 0.0275 | **0.0128 / 0.0125** | 0.0143 / 0.0131 |
 | DiT | S | 0.0407 / 0.0363 | 0.0175 / 0.0146 | 0.0264 / 0.0194 ※ |
@@ -86,7 +86,7 @@ RMSE，K = 1 / K = 5：
 | `curves/unet_L.png` | 大小比較 U-Net-L | `unet_L_{numerical, real, finetune}_s0` | 同上 |
 | `curves/dit_L.png` | 大小比較 DiT-L | `dit_L_{numerical, real, finetune}_s0` | 同上 |
 | `curves/dit_S.png` | 大小比較 DiT-S | `dit_S_{numerical, real, finetune}_s0` | 同上 |
-| `curves/unet_Sv2.png` | 大小比較 U-Net-S（重訓中，D-028） | `unet_Sv2_{numerical, real}_s0`（訓練中）、`unet_Sv2_finetune_s0`（排隊中） | 尚未產生 |
+| `curves/unet_Sv2.png` | 大小比較 U-Net-Sv2（D-028） | `unet_Sv2_{numerical, real, finetune}_s0` | `$P/phase6_test/<run>_N20_K{1,5}.json` |
 | `curves/unet_M_condnoise.png` | 觀察 5（6.3 第 4 項） | `unet_M_condnoise_{numerical, finetune}_s0` | 同上 |
 | `curves/dit_M_condnoise.png` | 觀察 5（6.3 第 4 項） | `dit_M_condnoise_{numerical, finetune}_s0` | 同上 |
 | `curves/unet_S.png` | 作廢（D-028），僅留存 | `unet_S_{numerical, real, finetune}_s0` | 同上（INVALID 區塊） |
@@ -118,7 +118,7 @@ RMSE，K = 1 / K = 5：
 
 ![size overview](../../../pi-lfm/results/fm/phase6_summary/curves/size_overview.png)
 
-- U-Net：real 是 L < M < Sv2（Sv2 還在訓練），finetune 是 L < M（Sv2 還沒開始跑）。L 從第一個評估點就比較好。
+- U-Net：real 和 finetune 都是 L < M < Sv2，L 從第一個評估點就比較好。
 - DiT：real 在發散前 M 和 L 幾乎重疊，S 稍高。發散的時間點不固定：S 在 numerical 第 26k 步、finetune 第 4k 步；L 在 real 第 18k 步。DiT-S finetune 的 ★ 因此停在第 2000 步。
 
 ### 其他大小與消融
@@ -133,7 +133,7 @@ DiT-S finetune 從一開始 grad norm 就持續上升，從 0.5 升到約 2500 �
 
 ![U-Net-Sv2 curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_Sv2.png)
 
-U-Net-Sv2 仍在訓練中，這張圖是 10-02 的中途狀態。跑完後重新執行 `plot_phase6_curves.py` 即可更新。舊 U-Net-S 的 training loss 停在 0.4–0.5，Sv2 的 real 已經降到約 0.05，寬度不足的問題已經排除。
+U-Net-Sv2 已訓練完成（10-02）。舊 U-Net-S 的 training loss 停在 0.4–0.5，Sv2 正常下降，寬度不足的問題已經排除。測試 RMSE 依大小排序為 Sv2 > M > L，例如 real K=1 是 0.0170 / 0.0147 / 0.0128。和其他大小一樣，finetune（20k 步、lr × 0.3）比 real 差，Update Ratio 為 not reached。
 
 ![U-Net-M condnoise curves](../../../pi-lfm/results/fm/phase6_summary/curves/unet_M_condnoise.png)
 
@@ -194,7 +194,7 @@ FM 的設定是 N = 20 Euler、噪聲 seed 1234。K=1 的樣本就是 5 個樣�
 
 ## 異常與與預期不符之處
 
-1. **U-Net-S（base_ch 40）作廢，Sv2 重訓中（D-028）**。U-Net 第一層把 y_t（每像素 60 維）和 cond 壓到 base_ch 個通道，40 < 60 時 y_t 的逐像素噪聲傳不過去。三個設定的訓練 loss 都卡在 0.4–0.5（M 檔降到 0.02），測試 RMSE 約 0.085，**比 persistence 還差**；K 拆解的 V/A = 34，代表模型輸出的幾乎只是噪聲。舊結果另列在完整表的「INVALID」區塊。新設定 **U-Net-Sv2** 是 base_ch 72、channel_mult 1-1-2-2、9.34M，job 487143（numerical）和 487144（real），finetune 和 eval 會由 `jobs/queue/phase6_sv2.q` 自動送出。跑完重新執行 `summarize_phase6.py`，表格就會更新。
+1. **U-Net-S（base_ch 40）作廢，已由 Sv2 取代（D-028）**。U-Net 第一層把 y_t（每像素 60 維）和 cond 壓到 base_ch 個通道，40 < 60 時 y_t 的逐像素噪聲傳不過去。三個設定的訓練 loss 都卡在 0.4–0.5（M 檔降到 0.02），測試 RMSE 約 0.085，**比 persistence 還差**；K 拆解的 V/A = 34，代表模型輸出的幾乎只是噪聲。舊結果另列在完整表的「INVALID」區塊。新設定 **U-Net-Sv2** 是 base_ch 72、channel_mult 1-1-2-2、9.34M，job 487143（numerical）和 487144（real），finetune 和 eval 會由 `jobs/queue/phase6_sv2.q` 自動送出。跑完重新執行 `summarize_phase6.py`，表格就會更新。
 2. **DiT 訓練不穩定（D-029）**：6 個 DiT run 在訓練中途發散，梯度範數漲到 10³–10⁴，loss 回到約 1。包括 DiT-M real 全部 3 個 seed（27–30k 步）、DiT-L real（18–28k 步）、DiT-S numerical（26k 步）、DiT-S finetune（4k 步）。測試用的 best.pt 都在發散前，所以數字有效，只有 DiT-S finetune 等於只訓練了 2000 步。U-Net 沒有這個問題。
 3. **FM 的 numerical 最佳點都很早**：DiT 是 2000–4000 步；U-Net-M 是 22k 步，之後 val 變差。這和 baseline 的 early-peak 現象（Step 3.4）一致：sim 訓練越久，對 real val 越不利。
 4. **U-Net-M real 在第 50k 步仍在進步**（best = last），表示 50k 步的預算對 U-Net-M 還不夠；U-Net-L real 在第 34k 步就到最佳了。
@@ -209,4 +209,4 @@ DiT 穩定性（第 1 項）和殘差目標（第 3 項）：使用者 10-02 指
 
 ## 下一步（尚未執行）
 
-- U-Net-Sv2 的 3 個 run 和 eval 跑完後，重新產生彙整表，並補上這份報告的大小比較表。
+- ~~U-Net-Sv2 的 3 個 run 和 eval~~：10-02 完成，彙整表、曲線和大小比較表都已更新。
