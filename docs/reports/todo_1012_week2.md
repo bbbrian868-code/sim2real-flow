@@ -195,5 +195,5 @@ U-Net-M（3 種設定 × 3 seeds）、U-Net-L、U-Net-Sv2 都沒有發散：grad
 - **C0.3**：發散前 DiT-M real 的 val/train 比值和穩定的 run 一樣，沒有過擬合（H3 排除）。順帶一提，U-Net-M real 的 val/train gap 反而比較大（t=0.3：2.7 倍），但它的 val RMSE 一直在改善，所以 FM loss 的 gap 不能直接拿來判斷取樣品質。
 - **C0.4 EMA vs raw**：發散前兩者的 val RMSE 只差 ±2%。EMA 的 logit 增長落後 raw（s1：t=0.9 時 324 vs 12045），等於把發散延後一點，但擋不住；發散後兩者一樣差。val 一直用 EMA，曲線不會掩蓋發散。
 - **C0.5**：**logit 增長和 t 有關，越接近資料端（t → 1）越大**（s1 raw：t=0.1 時 28，t=0.9 時 12045）。q/k 投影權重的 norm 只溫和增加（19 → 23–29），所以增長主要來自輸入 token 的對齊或放大，而不是 q/k 權重本身變大。adaLN 的 modulation 幅度在發散前正常（0.6–0.9），**發散後才暴增**（25–80，DiT-S 到 215），是結果不是原因。DiT-L 在第 16000 步（best.pt）各個 t 的 entropy 都已經是 0，val 卻還是最好的，所以 **entropy collapse 是前兆，不會立刻傷害預測**，但之後一定會發散。
-- **C0.6**：發散前，NFE 50 和 Heun 都比 Euler N=10 差 6–13%（DiT 和 U-Net 都一樣，見 B4），發散後三者沒有差別，所以換 sampler 救不了（H2 排除）。
+- **C0.6**：發散前，DiT 的 Euler N=50 比 N=10 差 6–7%（U-Net-M real 不變；見 B4：DiT 的 RMSE 隨 N 增加而上升），發散後三種 sampler 沒有差別，所以換 sampler 救不了（H2 排除）。注意：表中的 Heun10 是最後一步在 t = 1 評估的舊版 Heun，有偏差（D-039），只能當參考；判讀只依據 Euler N=50。
 - **P2（numerical 的 val 慢慢變差）**：DiT 和 U-Net 都是 train FM loss 下降、val FM loss 上升（DiT-M t=0.3：0.103 → 0.182；train 0.079 → 0.040），attention 正常。這是對模擬資料的過擬合或 sim→real 的落差，和 P1 無關，也不是 DiT 特有的。

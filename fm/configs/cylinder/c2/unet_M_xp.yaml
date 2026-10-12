@@ -1,0 +1,30 @@
+# C3 (todo_1012, D-040): U-Net-M with x-prediction; loss still on v = (x_hat - y_t) / max(1 - t, 0.05).
+# Otherwise identical to unet_M.yaml (control for the C2 x-pred DiT: parameterization vs backbone).
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
+  num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
+model:
+  backbone: unet
+  base_ch: 80
+  channel_mult: [1, 2, 4, 4]
+  num_res_blocks: 2
+  bottleneck_attn: false
+  pred: x
+  t_floor: 0.05
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 100000         # placeholder; the real budget is decided after Step 5.5 (D-013)
+  clip_grad: 1.0
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 10
+  noise_seed: 0
+  every: 2000
+  batch_size: 64
