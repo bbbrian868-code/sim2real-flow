@@ -2,6 +2,7 @@
 
   torchrun --nproc_per_node=G fm/train_fm.py --config fm/configs/cylinder/unet_M.yaml \
       --train-data-type numerical --out RUN_DIR [--seed 0] [--iters N] [--init-from CKPT --lr-scale 0.1]
+      [--resume CKPT]  (C1: continue model, EMA, optimizer and lr schedule from a saved step into a new run dir)
 """
 import argparse, copy, json, math, os, random, sys, time
 
@@ -17,6 +18,7 @@ from pilfm.official_eval import Env, run_val
 from fm.build import build_model, n_params
 from fm.paths import fm_loss, euler_sample
 from fm.wrapper import FMPredictor, fold
+from fm import diag
 
 T_IN, T_OUT, C = 20, 20, 3
 H, W = 64, 128
@@ -72,6 +74,13 @@ def main():
     ap.add_argument("--warmup", type=int, default=None, help="override train.warmup")
     ap.add_argument("--init-from", default=None, help="finetune: initialize model and EMA from this checkpoint's EMA")
     ap.add_argument("--lr-scale", type=float, default=1.0)
+    ap.add_argument("--resume", default=None,
+                    help="C1: load model/EMA/optimizer and the step from this checkpoint; the schedule continues")
+    ap.add_argument("--stop-at", type=int, default=None,
+                    help="stop (val + save) at this step while keeping the lr schedule of --iters (C1 resumes)")
+    ap.add_argument("--beta2", type=float, default=None, help="override train.betas[1] (also on --resume)")
+    ap.add_argument("--attn-every", type=int, default=0,
+                    help="DiT only: every N steps log attention logit/entropy, adaLN and q/k weight stats (rank 0)")
     ap.add_argument("--fixed-batch", action="store_true", help="overfit test: reuse the first batch forever")
     ap.add_argument("--no-val", action="store_true")
     ap.add_argument("--log-every", type=int, default=50)
@@ -123,16 +132,31 @@ def main():
     if args.init_from:
         src = torch.load(args.init_from, map_location="cpu", weights_only=False)
         model.load_state_dict(src["ema"])
+    start = 0
+    if args.resume:
+        src = torch.load(args.resume, map_location="cpu", weights_only=False)
+        model.load_state_dict(src["model"])
+        start = src["step"]
     ema = copy.deepcopy(model).eval().requires_grad_(False)
+    if args.resume:
+        ema.load_state_dict(src["ema"])
     net = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local]) if ddp else model
     base_lr = tc["lr"] * args.lr_scale
-    opt = torch.optim.AdamW(model.parameters(), lr=base_lr, betas=tuple(tc.get("betas", (0.9, 0.999))),
-                            weight_decay=tc["weight_decay"])
+    betas = list(tc.get("betas", (0.9, 0.999)))
+    if args.beta2 is not None:
+        betas[1] = args.beta2
+    opt = torch.optim.AdamW(model.parameters(), lr=base_lr, betas=tuple(betas), weight_decay=tc["weight_decay"])
+    if args.resume:
+        opt.load_state_dict(src["opt"])
+        for gr in opt.param_groups:
+            gr["betas"] = tuple(betas)
+        del src
 
     os.makedirs(args.out, exist_ok=True)
     info = meta.collect(data_root=dc["root"], config=cfg_text, seed=args.seed, checkpoint=args.init_from,
                         train_data_type=args.train_data_type, world_size=world, per_rank_batch=bs, iters=iters,
-                        lr=base_lr, n_params=n_params(model), init_from=args.init_from)
+                        lr=base_lr, n_params=n_params(model), init_from=args.init_from, resume=args.resume,
+                        resume_step=start, betas=betas)
     if rank == 0:
         json.dump(info, open(os.path.join(args.out, "run_meta.json"), "w"), indent=1)
         log = open(os.path.join(args.out, "log.jsonl"), "a")
@@ -145,8 +169,11 @@ def main():
     fixed = None
     best = float("inf")
     t_last, n_last = time.time(), 0
+    n_clip, gmax = 0, 0.0
+    attn_gen = torch.Generator(device=device).manual_seed(12345)  # separate stream: training RNG is untouched
     torch.cuda.reset_peak_memory_stats(device)
-    for step in range(iters):
+    end = min(iters, args.stop_at or iters)
+    for step in range(start, end):
         x, y = (fixed if fixed is not None else next(it))
         if args.fixed_batch and fixed is None:
             fixed = (x, y)
@@ -168,6 +195,9 @@ def main():
         opt.zero_grad(set_to_none=True)
         loss.backward()
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), tc["clip_grad"])
+        g = float(gnorm)
+        n_clip += g > tc["clip_grad"]
+        gmax = max(gmax, g) if math.isfinite(g) else float("inf")
         opt.step()
         ema_update(ema, model, ema_decay(step))
         n_last += gbs
@@ -178,12 +208,25 @@ def main():
             dt = time.time() - t_last
             rec = {"step": step + 1, "loss": loss.item(), "grad_norm": float(gnorm), "lr": opt.param_groups[0]["lr"],
                    "samples_per_s": n_last / dt, "it_per_s": n_last / gbs / dt,
-                   "peak_mem_gb": torch.cuda.max_memory_allocated(device) / 2**30}
+                   "peak_mem_gb": torch.cuda.max_memory_allocated(device) / 2**30,
+                   # every step since the previous log line (the fields above are the logged step only)
+                   "clip_frac": n_clip / args.log_every, "grad_norm_max": gmax}
             log.write(json.dumps(rec) + "\n"); log.flush()
             print(json.dumps(rec), flush=True)
             t_last, n_last = time.time(), 0
+        if (step + 1) % args.log_every == 0:
+            n_clip, gmax = 0, 0.0
 
-        last = step + 1 == iters
+        if rank == 0 and args.attn_every and (step + 1) % args.attn_every == 0 and diag.dit_of(model) is not None:
+            model.eval()
+            y0a = torch.randn(y1[:4].shape, device=device, generator=attn_gen)
+            ta = torch.rand(y1[:4].shape[0], device=device, generator=attn_gen)
+            yta = (1 - ta.view(-1, 1, 1, 1)) * y0a + ta.view(-1, 1, 1, 1) * y1[:4]
+            rec = {"step": step + 1, "attn": diag.attn_stats(model, yta, ta, cond[:4]), "wnorm": diag.weight_stats(model)}
+            model.train()
+            log.write(json.dumps(rec) + "\n"); log.flush()
+
+        last = step + 1 == end
         if (step + 1) % val_every == 0 or last:
             if rank == 0:
                 state = dict(model=model.state_dict(), ema=ema.state_dict(), opt=opt.state_dict(), step=step + 1,
@@ -202,7 +245,7 @@ def main():
             if ddp:
                 dist.barrier()
     if rank == 0:
-        json.dump({"step": iters, "best_val_rmse": best}, open(os.path.join(args.out, "done.json"), "w"))
+        json.dump({"step": end, "best_val_rmse": best}, open(os.path.join(args.out, "done.json"), "w"))
     if args.fixed_batch and rank == 0:
         # Step 5.4: N=20 Euler samples on the memorized batch, raw and EMA weights, rel L2 in normalized space
         x, y = norm.preprocess(*fixed)

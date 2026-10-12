@@ -22,9 +22,12 @@ def modulate(x, shift, scale):
 
 
 class Block(nn.Module):
-    def __init__(self, dim, heads, mlp_ratio=4.0):
+    def __init__(self, dim, heads, mlp_ratio=4.0, qk_norm=False):
         super().__init__()
         self.heads = heads
+        # C2: optional per-head RMSNorm on q and k (learnable scale), as in ViT-22B / SD3; off = original block
+        self.q_norm = nn.RMSNorm(dim // heads, eps=1e-6) if qk_norm else None
+        self.k_norm = nn.RMSNorm(dim // heads, eps=1e-6) if qk_norm else None
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.qkv, self.proj = nn.Linear(dim, 3 * dim), nn.Linear(dim, dim)
         self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
@@ -33,24 +36,33 @@ class Block(nn.Module):
         self.ada = nn.Sequential(nn.SiLU(), nn.Linear(dim, 6 * dim))
         nn.init.zeros_(self.ada[1].weight); nn.init.zeros_(self.ada[1].bias)
 
+    def qkv_heads(self, x, s1, g1):
+        """(B, heads, N, head_dim) q, k, v as seen by the attention (after the optional QK-norm)."""
+        B, N, D = x.shape
+        q, k, v = self.qkv(modulate(self.norm1(x), s1, g1)).reshape(B, N, 3, self.heads, D // self.heads).permute(2, 0, 3, 1, 4)
+        if self.q_norm is not None:
+            q, k = self.q_norm(q), self.k_norm(k)
+        return q, k, v
+
     def forward(self, x, c):
         s1, g1, a1, s2, g2, a2 = self.ada(c).chunk(6, dim=1)
         B, N, D = x.shape
-        q, k, v = self.qkv(modulate(self.norm1(x), s1, g1)).reshape(B, N, 3, self.heads, D // self.heads).permute(2, 0, 3, 1, 4)
+        q, k, v = self.qkv_heads(x, s1, g1)
         h = F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(B, N, D)
         x = x + a1[:, None] * self.proj(h)
         return x + a2[:, None] * self.mlp(modulate(self.norm2(x), s2, g2))
 
 
 class DiT(nn.Module):
-    def __init__(self, in_ch, out_ch, height=64, width=128, patch=4, dim=384, depth=12, heads=6, mlp_ratio=4.0):
+    def __init__(self, in_ch, out_ch, height=64, width=128, patch=4, dim=384, depth=12, heads=6, mlp_ratio=4.0,
+                 qk_norm=False):
         super().__init__()
         assert height % patch == 0 and width % patch == 0
         self.p, self.out_ch, self.gh, self.gw = patch, out_ch, height // patch, width // patch
         self.embed = nn.Conv2d(in_ch, dim, patch, stride=patch)
         self.register_buffer("pos", sincos_2d(dim, self.gh, self.gw)[None], persistent=False)
         self.time = TimeEmbedding(256, dim)
-        self.blocks = nn.ModuleList([Block(dim, heads, mlp_ratio) for _ in range(depth)])
+        self.blocks = nn.ModuleList([Block(dim, heads, mlp_ratio, qk_norm) for _ in range(depth)])
         self.norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.ada = nn.Sequential(nn.SiLU(), nn.Linear(dim, 2 * dim))
         self.head = nn.Linear(dim, patch * patch * out_ch)
@@ -64,10 +76,13 @@ class DiT(nn.Module):
         for m in (self.ada[1], self.head):
             nn.init.zeros_(m.weight); nn.init.zeros_(m.bias)
 
-    def forward(self, yt, t, cond):
+    def forward(self, yt, t, cond, trace=None):
+        """trace: optional list; each block appends (tokens_in, c) so diagnostics can recompute its attention."""
         x = self.embed(torch.cat([yt, cond], dim=1)).flatten(2).transpose(1, 2) + self.pos
         c = self.time(t)
         for blk in self.blocks:
+            if trace is not None:
+                trace.append((x, c))
             x = blk(x, c)
         shift, scale = self.ada(c).chunk(2, dim=1)
         x = self.head(modulate(self.norm(x), shift, scale))  # (B, gh*gw, p*p*C)

@@ -1,4 +1,4 @@
-"""Rectified flow (sigma_min = 0): linear path, Gaussian source, independent coupling, t ~ U(0, 1), Euler sampler."""
+"""Rectified flow (sigma_min = 0): linear path, Gaussian source, independent coupling, t ~ U(0, 1), Euler/Heun samplers."""
 import torch
 import torch.nn.functional as F
 
@@ -21,3 +21,24 @@ def euler_sample(model, cond, shape, n_steps, generator=None):
         t = torch.full((shape[0],), i * dt, device=cond.device)
         y = y + dt * model(y, t, cond)
     return y
+
+
+@torch.no_grad()
+def heun_sample(model, cond, shape, n_steps, generator=None):
+    """Heun (explicit trapezoid) on the same uniform grid; 2 velocity evaluations per step, NFE = 2 * n_steps."""
+    y = torch.randn(shape, device=cond.device, generator=generator)
+    dt = 1.0 / n_steps
+    for i in range(n_steps):
+        t = torch.full((shape[0],), i * dt, device=cond.device)
+        v0 = model(y, t, cond)
+        v1 = model(y + dt * v0, t + dt, cond)
+        y = y + 0.5 * dt * (v0 + v1)
+    return y
+
+
+def sample(model, cond, shape, n_steps, generator=None, solver="euler"):
+    if solver == "euler":
+        return euler_sample(model, cond, shape, n_steps, generator)
+    if solver == "heun":
+        return heun_sample(model, cond, shape, n_steps, generator)
+    raise ValueError(solver)

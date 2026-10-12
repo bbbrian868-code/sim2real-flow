@@ -1,7 +1,9 @@
 """Test (or val) evaluation of FM checkpoints through the official-mirror loop, for several (N, K) settings.
 
   python eval_fm.py --run RUN_DIR [--ckpt best.pt] --data-root ROOT --out-dir DIR --nk 20,1 20,5 [--split test]
-Writes DIR/<run>_N{N}_K{K}.json with metrics and metadata. EMA weights are used.
+                    [--solver euler|heun]
+Writes DIR/<run>_N{N}_K{K}.json (Heun: <run>_heun{N}_K{K}.json, N = steps, NFE = 2N) with metrics and metadata.
+EMA weights are used.
 """
 import argparse, json, os, sys, time
 
@@ -25,6 +27,7 @@ def main():
     ap.add_argument("--split", default="test", choices=["test", "val"])
     ap.add_argument("--noise-seed", type=int, default=1234)
     ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--solver", default="euler", choices=["euler", "heun"])
     a = ap.parse_args()
     if not torch.cuda.is_available():
         sys.exit("CUDA not available")
@@ -39,16 +42,17 @@ def main():
         model.load_state_dict(st["ema"]); model.eval()
         for nk in a.nk:
             n, k = map(int, nk.split(","))
-            out = os.path.join(a.out_dir, f"{os.path.basename(run.rstrip('/'))}_N{n}_K{k}.json")
+            tag = f"N{n}" if a.solver == "euler" else f"heun{n}"
+            out = os.path.join(a.out_dir, f"{os.path.basename(run.rstrip('/'))}_{tag}_K{k}.json")
             if os.path.exists(out):
                 continue
             t0 = time.time()
-            pred = FMPredictor(model, 20, 3, n_steps=n, n_samples=k, seed=a.noise_seed)
+            pred = FMPredictor(model, 20, 3, n_steps=n, n_samples=k, seed=a.noise_seed, solver=a.solver)
             # fp32 sampling, same as the in-training validation that selected the checkpoint
             m = (run_test(env, pred, a.batch_size, device) if a.split == "test"
                  else run_val(env, pred, a.batch_size, device))
             rec = {"run": run, "ckpt": a.ckpt, "ckpt_step": st["step"], "best_val_rmse_subset": st.get("best_val_rmse"),
-                   "N": n, "K": k, "noise_seed": a.noise_seed, "split": a.split, "metrics": m,
+                   "N": n, "K": k, "solver": a.solver, "nfe": n * k * (2 if a.solver == "heun" else 1), "noise_seed": a.noise_seed, "split": a.split, "metrics": m,
                    "train_data_type": rm["train_data_type"], "seconds": time.time() - t0,
                    "meta": meta.collect(data_root=a.data_root, config=rm["config"], seed=rm["seed"],
                                         checkpoint=os.path.join(run, a.ckpt), weights="ema")}

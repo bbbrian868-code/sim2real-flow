@@ -1,0 +1,32 @@
+# C2 screening (todo_1012, D-032): x-prediction + patch 4 + QK-norm; loss still on v = (x_hat - y_t) / max(1 - t, 0.05) (JiT, Li & He 2025).
+# Otherwise identical to dit_M.yaml.
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
+  num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
+model:
+  backbone: dit
+  patch: 4             # x-pred: the target is the (low-dimensional) clean field, so the D-019 bottleneck should not bind
+  dim: 512
+  depth: 8
+  heads: 8
+  mlp_ratio: 4.0
+  qk_norm: true
+  pred: x
+  t_floor: 0.05
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 100000         # placeholder; the real budget is decided after Step 5.5 (D-013)
+  clip_grad: 1.0
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 10
+  noise_seed: 0
+  every: 2000
+  batch_size: 64
