@@ -1,0 +1,8 @@
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk.yaml --seed 0 --out /work/b314513067/pi-lfm/results/fm/c2/qk_s0
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk.yaml --seed 1 --out /work/b314513067/pi-lfm/results/fm/c2/qk_s1
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk.yaml --seed 2 --out /work/b314513067/pi-lfm/results/fm/c2/qk_s2
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk_b95.yaml --seed 0 --out /work/b314513067/pi-lfm/results/fm/c2/qk_b95_s0
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk_b95.yaml --seed 1 --out /work/b314513067/pi-lfm/results/fm/c2/qk_b95_s1
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_qk_b95.yaml --seed 2 --out /work/b314513067/pi-lfm/results/fm/c2/qk_b95_s2
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_xp4_qk.yaml --seed 0 --out /work/b314513067/pi-lfm/results/fm/c2/xp4_qk_s0
+python fm/train_fm.py --train-data-type real --iters 50000 --attn-every 250 --config fm/configs/cylinder/c2/dit_M_xp4_qk.yaml --seed 1 --out /work/b314513067/pi-lfm/results/fm/c2/xp4_qk_s1
