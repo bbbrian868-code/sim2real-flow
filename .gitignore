@@ -17,3 +17,4 @@ data/
 ckpt/
 runs/
 results/
+jobs/lists/*.log

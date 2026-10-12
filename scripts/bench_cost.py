@@ -1,7 +1,8 @@
 """B2 + B3 (todo_1012): parameters, forward FLOPs and a controlled speed / memory benchmark, all models on one GPU.
 
 Synthetic tensors only (no dataloader), so the numbers measure the model, not the official __getitem__ (D-015).
-  train  : one optimizer step (fwd + bwd + clip + step) -- "controlled" = bf16 autocast, batch 64 for every model;
+  train  : one optimizer step (fwd + bwd + clip + step) -- "controlled" = bf16 autocast, batch 64 for every model
+           (official baselines: the largest of 64/32/16/12 that fits in memory);
            official baselines also "as_run" = fp32 at their config batch (U-Net 12, DeepONet 32, Transolver 16)
   infer  : one forward (FM: one velocity evaluation = 1 NFE) at batch 1 (latency) and batch 64 (throughput),
            fp32 (= how every evaluation in the report was run) and bf16
@@ -83,14 +84,22 @@ def bench_official(name, dev, shape_ds):
         return f
 
     res["flops_fwd_b1"] = flops(fwd_fn(1, False))
-    for tag, b, bf16 in (("as_run", bs_run, False), ("controlled", 64, True)):
-        try:
-            t = timeit(step_fn(b, bf16)); t["batch"] = b; t["bf16"] = bf16
-            t["samples_per_s"] = b / t["median_s"]; t["peak_mem_gb"] = peak(step_fn(b, bf16))
-            res[f"train_{tag}"] = t
-        except Exception as e:  # e.g. an op without bf16 support
-            res[f"train_{tag}"] = {"error": repr(e)[:300]}
-            torch.cuda.empty_cache()
+    # controlled = bf16 at batch 64; if that does not fit in memory (official U-Net: 3D U-Net, ~1.1 TFLOP/sample),
+    # the largest of 32 / 16 / 12 that fits -- per-sample throughput is what gets compared
+    for tag, bss, bf16 in (("as_run", [bs_run], False), ("controlled", [64, 32, 16, 12], True)):
+        errs = []
+        for b in bss:
+            try:
+                t = timeit(step_fn(b, bf16)); t["batch"] = b; t["bf16"] = bf16
+                t["samples_per_s"] = b / t["median_s"]; t["peak_mem_gb"] = peak(step_fn(b, bf16))
+                t["fallback_errors"] = errs
+                res[f"train_{tag}"] = t
+                break
+            except Exception as e:  # OOM, or an op without bf16 support
+                errs.append(f"batch {b}: {repr(e)[:200]}")
+                opt.zero_grad(set_to_none=True); torch.cuda.empty_cache()
+        else:
+            res[f"train_{tag}"] = {"error": errs}
     for prec in ("fp32", "bf16"):
         for b in (1, 64):
             try:
