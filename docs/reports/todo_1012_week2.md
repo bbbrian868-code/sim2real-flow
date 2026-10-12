@@ -86,9 +86,28 @@ baseline 的時間來自 TensorBoard `train_loss` 逐步的 `wall_time`；FM 的
 - **訓練成本**（每個樣本）：baseline 57 ms（fp32），FM U-Net-M 1.5 ms（bf16），差約 38 倍。所以 FM 看了 27 倍的樣本，GPU 時間還是比較少。
 - QK-norm 讓 DiT-M 的訓練慢 36%，記憶體多 46%（RMSNorm 的額外記憶體讀寫）。x-pred + patch 4 的 token 數只有 1/4，訓練快 3 倍。
 
-### B4 RMSE vs NFE 的 Pareto 圖
+### B4 RMSE vs NFE 的 Pareto 圖（`scripts/eval_fm.py` + `scripts/cost_summary.py pareto` → `$R/cost/pareto.{png,csv}`）
 
-（見下方 §B4，跑完後補上）
+2.0.1 real test（4827 筆）、K = 1、噪聲 seed 1234、EMA best.pt（D-038）。Euler NFE {1, 2, 4, 8, 16, 32}；Heun 用**最後一步改 Euler** 的版本（步數 2/4/8/16 → NFE 3/7/15/31，D-039）。最早跑的 Heun 在最後一步會評估 t = 1，有偏差（例如 U-Net-M 1 步 0.098），只留在 CSV 裡。右圖的時間 = NFE × B3 量到的每次 forward 時間（fp32、batch 64）。另外加上 C2 的 x-pred DiT（3 seeds，第 50000 步，沒有發散）。job 531149、531317、531322。
+
+![pareto](../figures/1012/pareto.png)
+
+| 模型 | NFE 1 | 2 | 4 | 8 | 16 | 32 | 最佳（NFE） | 最佳點的時間 / 樣本 |
+|---|---|---|---|---|---|---|---|---|
+| U-Net baseline（確定性，1 次 forward） | 0.01209 | | | | | | 0.01209 | 19.6 ms |
+| FM U-Net-M（3 seeds） | 0.01734 | 0.01568 | 0.01504 | 0.01480 | 0.01473 | 0.01474 | 0.01473（16） | 9.6 ms |
+| FM U-Net-L（seed 0） | 0.01414 | 0.01305 | 0.01278 | 0.01274 | 0.01279 | 0.01285 | 0.01274（8，+5.4%） | 10.5 ms |
+| FM DiT-M（v-pred，3 seeds，發散前的 ckpt） | **0.01323** | 0.01341 | 0.01423 | 0.01511 | 0.01577 | 0.01617 | 0.01323（1） | 4.7 ms |
+| FM DiT-M x-pred patch 4 + QK-norm（C2，3 seeds） | **0.01217** | 0.01253 | 0.01344 | 0.01439 | 0.01509 | 0.01556 | **0.01217（1，+0.7%）** | **0.9 ms** |
+
+Heun（Euler 最後一步），NFE 3 / 7 / 15 / 31：U-Net-M 0.01549 / 0.01489 / 0.01474 / 0.01473；U-Net-L 0.01302 / 0.01276 / 0.01276 / 0.01284；DiT-M 0.01407 / 0.01530 / 0.01613 / 0.01650。**在相同 NFE 下，Heun 沒有比 Euler 好。**
+
+**重點**
+- **U-Net 和 DiT 的趨勢相反**：U-Net 的 RMSE 隨 NFE 下降，NFE 8 之後持平；DiT 的 RMSE 隨 NFE **上升**，NFE 1 最好。
+- **NFE 1 的 Euler 等於條件均值的估計**：一步 Euler 是 y = y0 + v(y0, 0, c)，而 t = 0 時最佳的 v 是 E[y1 | c] − y0，所以輸出就是 E[y1 | c]，和噪聲無關，是一個確定性的回歸預測。DiT 在 NFE 1 最好，表示它學到的條件均值不錯，但積分越多步，樣本的變異和誤差越大（RMSE 偏好平滑的條件均值，見 Phase 6 觀察 6）。U-Net 在 t = 0 的預測反而差（0.0173），要積分幾步才變好。
+- **x-pred DiT 在 NFE 1 時 RMSE 0.01217，和 U-Net baseline（0.01209）只差 0.7%，每個樣本只要 0.9 ms**，baseline 要 19.6 ms。不過這是「當成回歸模型用」的結果，不代表生成的樣本品質；這正好是 D 節「同骨架確定性回歸對照組」要回答的問題。
+- 對主表的影響：主表用 N = 20，對 DiT 不利（v-pred DiT-M 在 NFE 1 是 0.0132，N = 20 是 0.0159）。**FM 的 RMSE 要和 NFE 一起報告**，不能只報一個 N。
+- 以時間來看，FM U-Net-L 在 NFE 4–8（5–10 ms）就達到 0.0128，比 baseline 便宜，但 RMSE 還是差 5%。
 
 ---
 ## C. DiT 的 val RMSE 回升後降不回去

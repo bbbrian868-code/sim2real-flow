@@ -16,7 +16,9 @@ BENCH = f"{R}/fm/b3_bench/bench.json"
 B4 = f"{R}/fm/b4_pareto"
 # U-Net baseline real test RMSE (Phase 4, 3 seeds) -- docs/REPORT_phase0-4 Section 5.2
 UNET_BASELINE_RMSE = (0.01209, 0.00004)
-COLORS = {"FM U-Net-M": "#2a78d6", "FM DiT-M": "#eb6834", "FM U-Net-L": "#1baf7a"}
+COLORS = {"FM U-Net-M": "#2a78d6", "FM DiT-M": "#eb6834", "FM U-Net-L": "#1baf7a", "FM DiT-M x-pred p4 QK (C2)": "#4a3aa7"}
+FAMILIES = list(COLORS)
+FAMILY_OF = {"unet_M": "FM U-Net-M", "dit_M": "FM DiT-M", "unet_L": "FM U-Net-L", "xp4_qk": "FM DiT-M x-pred p4 QK (C2)"}
 INK, MUTED = "#0b0b0b", "#8a8984"
 
 ROWS = [  # label, bench key, as-run rows (method, setting) from asrun.csv
@@ -83,21 +85,23 @@ def cmd_pareto():
     b = json.load(open(BENCH))["models"]
     lat = {"FM U-Net-M": b["fm_unet_M"]["infer_fp32_b64"]["median_s"] / 64,
            "FM DiT-M": b["fm_dit_M"]["infer_fp32_b64"]["median_s"] / 64,
-           "FM U-Net-L": b["fm_unet_L"]["infer_fp32_b64"]["median_s"] / 64}
+           "FM U-Net-L": b["fm_unet_L"]["infer_fp32_b64"]["median_s"] / 64,
+           "FM DiT-M x-pred p4 QK (C2)": b["fm_dit_M_xp4_qk"]["infer_fp32_b64"]["median_s"] / 64}
     base_t = b["official_unet"]["infer_fp32_b64"]["median_s"] / 64 if "median_s" in b["official_unet"].get("infer_fp32_b64", {}) else None
     rows = []
     for f in glob.glob(f"{B4}/*.json"):
         j = json.load(open(f))
         run = os.path.basename(j["run"].rstrip("/"))
-        fam = {"unet_M": "FM U-Net-M", "dit_M": "FM DiT-M", "unet_L": "FM U-Net-L"}["_".join(run.split("_")[:2])]
+        fam = FAMILY_OF["_".join(run.split("_")[:2])]
         nfe = j.get("nfe", j["N"] * j["K"])
         rows.append({"family": fam, "run": run, "solver": j.get("solver", "euler"), "steps": j["N"], "nfe": nfe,
                      "rmse": j["metrics"]["rmse"], "sec_per_sample_gpu": nfe * lat[fam]})
     with open(f"{OUT}/pareto.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, list(rows[0])); w.writeheader(); w.writerows(sorted(rows, key=lambda r: (r["family"], r["solver"], r["nfe"], r["run"])))
-    fig, ax = plt.subplots(1, 2, figsize=(13, 5.2), sharey=True)
-    for fam in ["FM U-Net-M", "FM DiT-M", "FM U-Net-L"]:
-        for solver, ls, mk in (("euler", "-", "o"), ("heun", "--", "s")):
+    fig, ax = plt.subplots(1, 2, figsize=(13, 6.4), sharey=True)
+    for fam in FAMILIES:
+        # plain Heun (last correction at t = 1, biased) is kept in the CSV only; the plot uses Heun with an Euler last step
+        for solver, ls, mk in (("euler", "-", "o"), ("heun_e", "--", "s")):
             rs = [r for r in rows if r["family"] == fam and r["solver"] == solver]
             if not rs:
                 continue
@@ -106,7 +110,7 @@ def cmd_pareto():
             sd = [np.std([r["rmse"] for r in rs if r["nfe"] == n], ddof=1) if sum(r["nfe"] == n for r in rs) > 1 else 0 for n in nfes]
             for a, x in ((ax[0], nfes), (ax[1], [n * lat[fam] * 1000 for n in nfes])):
                 a.errorbar(x, mean, yerr=sd, color=COLORS[fam], ls=ls, marker=mk, ms=6, lw=2, capsize=2,
-                           label=f"{fam}, {solver}" + (f" (n={len({r['run'] for r in rs})} seeds)"))
+                           label=f"{fam}, {'Heun (Euler last step)' if solver == 'heun_e' else 'Euler'}" + (f" (n={len({r['run'] for r in rs})} seeds)"))
     for a in ax:
         a.axhline(UNET_BASELINE_RMSE[0], color=INK, lw=1, ls=":")
         a.set_xscale("log"); a.grid(alpha=0.25, lw=0.5)
@@ -115,15 +119,15 @@ def cmd_pareto():
     if base_t:
         ax[1].plot([base_t * 1000], [UNET_BASELINE_RMSE[0]], marker="*", ms=14, color=INK, ls="none", label="U-Net baseline (1 fwd)")
     ax[0].plot([1], [UNET_BASELINE_RMSE[0]], marker="*", ms=14, color=INK, ls="none", label="U-Net baseline (1 fwd)")
-    ax[0].set_xlabel("NFE (velocity evaluations per sample; Heun = 2 per step)")
+    ax[0].set_xlabel("NFE (velocity evaluations per sample; Heun = 2 per step, Euler last step)")
     ax[1].set_xlabel("GPU time per sample (ms; fp32, batch 64, H200, from B3)")
     ax[0].set_ylabel("real test RMSE (K = 1)")
-    ax[0].legend(fontsize=8, frameon=False)
-    ax[1].legend(fontsize=8, frameon=False)
+    h, l = ax[1].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=3, fontsize=9, frameon=False)
     fig.suptitle("RMSE vs inference cost, 2.0.1 real test (dotted: U-Net baseline)")
-    fig.tight_layout(); fig.savefig(f"{OUT}/pareto.png", dpi=130)
-    for fam in ["FM U-Net-M", "FM DiT-M", "FM U-Net-L"]:
-        for solver in ("euler", "heun"):
+    fig.tight_layout(rect=(0, 0.14, 1, 1)); fig.savefig(f"{OUT}/pareto.png", dpi=130)
+    for fam in FAMILIES:
+        for solver in ("euler", "heun", "heun_e"):
             rs = [r for r in rows if r["family"] == fam and r["solver"] == solver]
             print(fam, solver, [(n, round(np.mean([r["rmse"] for r in rs if r["nfe"] == n]), 5)) for n in sorted({r["nfe"] for r in rs})])
 
