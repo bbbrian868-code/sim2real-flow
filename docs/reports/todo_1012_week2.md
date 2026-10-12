@@ -10,7 +10,9 @@
 1. **Transolver 的回升（A）**：6 個 run 裡只有 real s2 有實質回升（1800→2000 步，val +29%）。同一段 train loss 也上升 43% 並出現 spike，判定為**最佳化不穩**（lr 7e-4、沒有 warmup、沒有 clipping）。其餘 5 個 run 只是 ≤4.5% 的單點跳動。所有 run 的最佳點都在第 5000 步，不影響報告數字。A2 不需要做（D-032）。
 2. **成本（B）**：清單原本的前提「U-Net baseline 的 wall-clock 主要花在資料載入」**不成立**。官方 U-Net 是 3D U-Net，**每個樣本 forward 約 1.1 TFLOPs**，用合成 tensor 量到的 step time（0.687 s）和 as-run 的 0.688 s/iter 一樣。FM U-Net-M 每次 NFE 是 54 GFLOPs，所以 **NFE 20 的總計算量大約等於 baseline 的一次 forward**。推論時間：FM U-Net-M 在 NFE 20 約 12 ms/樣本，baseline 約 20 ms/樣本（fp32、batch 64）。
 3. **DiT 的「回升後降不回去」（C）其實是訓練發散**，只發生在 real 設定（DiT-M 3/3 個 seed，發散起點 27.0k–27.4k 步）。機制是 **attention logit 增長（H1）**：第 0 層的 attention logit 先暴增到 10⁵–10⁸，entropy 降到 0（one-hot attention），之後 grad norm 才爆炸，然後其他層跟著崩潰。U-Net FM 沒有這個現象。
-4. **從發散前的 checkpoint 續訓（C1）**：在 26k 步時狀態已經接近臨界，相同設定、β2 0.95、lr 減半都在 750–1200 步內發散；20k 步的 checkpoint 用相同設定續訓到 26k 步沒有發散，但第 0 層的 entropy 已經降到 0。也就是說，**事後調 optimizer 無效，要從架構上限制 logit**。
+4. **C2 篩選**：現行設定 **6/6 個 seed 發散**（27.0k–29.3k 步）；加上 QK-norm 的三個設定都是 **0/3 發散**，最終 val 都優於現行設定發散前的最佳值。x-pred + patch 4 + QK-norm 最好（test RMSE N20 K1 0.01525 ± 0.00003，原本 0.01592 ± 0.00039），而且訓練快 3 倍。
+5. **C3**：x-pred 對 U-Net 也有效（test RMSE N20 K1 0.01473 → **0.01340**，FE 48.7 → 30.0，優於 baseline 的 33.1），所以 x-pred 的改善主要來自參數化方式，不是 backbone。
+6. **從發散前的 checkpoint 續訓（C1）**：在 26k 步時狀態已經接近臨界，相同設定、β2 0.95、lr 減半都在 750–1200 步內發散；20k 步的 checkpoint 用相同設定續訓到 26k 步沒有發散，但第 0 層的 entropy 已經降到 0。也就是說，**事後調 optimizer 無效，要從架構上限制 logit**。
 
 ---
 
@@ -99,11 +101,12 @@ baseline 的時間來自 TensorBoard `train_loss` 逐步的 `wall_time`；FM 的
 | FM U-Net-L（seed 0） | 0.01414 | 0.01305 | 0.01278 | 0.01274 | 0.01279 | 0.01285 | 0.01274（8，+5.4%） | 10.5 ms |
 | FM DiT-M（v-pred，3 seeds，發散前的 ckpt） | **0.01323** | 0.01341 | 0.01423 | 0.01511 | 0.01577 | 0.01617 | 0.01323（1） | 4.7 ms |
 | FM DiT-M x-pred patch 4 + QK-norm（C2，3 seeds） | **0.01217** | 0.01253 | 0.01344 | 0.01439 | 0.01509 | 0.01556 | **0.01217（1，+0.7%）** | **0.9 ms** |
+| FM U-Net-M x-pred（C3，3 seeds） | 0.01299 | 0.01296 | 0.01309 | 0.01325 | 0.01337 | 0.01352 | 0.01296（2，+7.2%） | 1.2 ms |
 
 Heun（Euler 最後一步），NFE 3 / 7 / 15 / 31：U-Net-M 0.01549 / 0.01489 / 0.01474 / 0.01473；U-Net-L 0.01302 / 0.01276 / 0.01276 / 0.01284；DiT-M 0.01407 / 0.01530 / 0.01613 / 0.01650。**在相同 NFE 下，Heun 沒有比 Euler 好。**
 
 **重點**
-- **U-Net 和 DiT 的趨勢相反**：U-Net 的 RMSE 隨 NFE 下降，NFE 8 之後持平；DiT 的 RMSE 隨 NFE **上升**，NFE 1 最好。
+- **v-pred U-Net 和其他模型的趨勢相反**：v-pred U-Net 的 RMSE 隨 NFE 下降，NFE 8 之後持平；DiT（v-pred、x-pred）和 x-pred U-Net 的 RMSE 隨 NFE **上升**或持平，NFE 1–2 最好。
 - **NFE 1 的 Euler 等於條件均值的估計**：一步 Euler 是 y = y0 + v(y0, 0, c)，而 t = 0 時最佳的 v 是 E[y1 | c] − y0，所以輸出就是 E[y1 | c]，和噪聲無關，是一個確定性的回歸預測。DiT 在 NFE 1 最好，表示它學到的條件均值不錯，但積分越多步，樣本的變異和誤差越大（RMSE 偏好平滑的條件均值，見 Phase 6 觀察 6）。U-Net 在 t = 0 的預測反而差（0.0173），要積分幾步才變好。
 - **x-pred DiT 在 NFE 1 時 RMSE 0.01217，和 U-Net baseline（0.01209）只差 0.7%，每個樣本只要 0.9 ms**，baseline 要 19.6 ms。不過這是「當成回歸模型用」的結果，不代表生成的樣本品質；這正好是 D 節「同骨架確定性回歸對照組」要回答的問題。
 - 對主表的影響：主表用 N = 20，對 DiT 不利（v-pred DiT-M 在 NFE 1 是 0.0132，N = 20 是 0.0159）。**FM 的 RMSE 要和 NFE 一起報告**，不能只報一個 N。
@@ -216,3 +219,69 @@ U-Net-M（3 種設定 × 3 seeds）、U-Net-L、U-Net-Sv2 都沒有發散：grad
 - **C0.5**：**logit 增長和 t 有關，越接近資料端（t → 1）越大**（s1 raw：t=0.1 時 28，t=0.9 時 12045）。q/k 投影權重的 norm 只溫和增加（19 → 23–29），所以增長主要來自輸入 token 的對齊或放大，而不是 q/k 權重本身變大。adaLN 的 modulation 幅度在發散前正常（0.6–0.9），**發散後才暴增**（25–80，DiT-S 到 215），是結果不是原因。DiT-L 在第 16000 步（best.pt）各個 t 的 entropy 都已經是 0，val 卻還是最好的，所以 **entropy collapse 是前兆，不會立刻傷害預測**，但之後一定會發散。
 - **C0.6**：發散前，DiT 的 Euler N=50 比 N=10 差 6–7%（U-Net-M real 不變；見 B4：DiT 的 RMSE 隨 N 增加而上升），發散後三種 sampler 沒有差別，所以換 sampler 救不了（H2 排除）。注意：表中的 Heun10 是最後一步在 t = 1 評估的舊版 Heun，有偏差（D-039），只能當參考；判讀只依據 Euler N=50。
 - **P2（numerical 的 val 慢慢變差）**：DiT 和 U-Net 都是 train FM loss 下降、val FM loss 上升（DiT-M t=0.3：0.103 → 0.182；train 0.079 → 0.040），attention 正常。這是對模擬資料的過擬合或 sim→real 的落差，和 P1 無關，也不是 DiT 特有的。
+
+### C2 篩選實驗（D-034、D-035）
+
+DiT-M、real、50k 步 cosine、每個設定 3 個 seed（現行設定 6 個：phase 6 的 s0b/s1/s2 加上新的 s3/s4/s5）。job 531148、531149。參考值 = 現行設定 seed 0–2 發散前最佳 val 的平均 = **0.01533**。
+
+![C2 screening](../figures/1012/c2_screen.png)
+
+| 設定 | 發散 | 發散步數 | 最終 val（3 seeds） | 最佳點 | 訓練 ms/step（B3） | 通過？ |
+|---|---|---|---|---|---|---|
+| 1. 現行（v-pred、patch 2） | **6/6** | 27000 / 27050 / 27400 / 27300 / 28550 / 29250 | 0.130–0.143（崩潰） | 20k–28k | 178 | 否 |
+| 2. + QK-norm | 0/3 | – | 0.01482 / 0.01490 / 0.01496 | 50k（最後一步） | 242 | **是** |
+| 3. + QK-norm + β2 0.95 | 0/3 | – | 0.01473 / 0.01474 / 0.01475 | 46k–50k | 242 | **是** |
+| 4. x-pred + patch 4 + QK-norm | 0/3 | – | **0.01465 / 0.01462 / 0.01467** | 50k（最後一步） | **60** | **是（最好）** |
+
+- QK-norm 的三個設定，各層的 max attention logit 整個訓練過程都在 7–25 之間；現行設定到 27k 步前後升到 10⁴–10¹⁰。
+- 三個設定都通過成功標準（0/3 發散，最終 val 優於 0.01533），而且到第 50k 步都還在進步。
+
+**test 結果**（2.0.1 real test，EMA，最後一個 checkpoint；`scripts/c_stability.py c2test` → `$F/c_stability/c2_test.md`；job 531322、531679）
+
+| 設定 | N=20 K=1 | N=20 K=5 | Euler NFE 1 | FE（N20 K1） |
+|---|---|---|---|---|
+| DiT-M 現行（phase 6，發散前的 ckpt） | 0.01592 ± 0.00039 | 0.01331 ± 0.00024 | 0.01323 ± 0.00024 | 45.4 |
+| DiT-M + QK-norm | 0.01560 ± 0.00006 | 0.01281 ± 0.00005 | 0.01253 ± 0.00005 | 38.3 |
+| DiT-M + QK-norm + β2 0.95 | 0.01543 ± 0.00001 | 0.01267 ± 0.00002 | 0.01237 ± 0.00006 | 37.5 |
+| **DiT-M x-pred patch 4 + QK-norm** | **0.01525 ± 0.00003** | **0.01247 ± 0.00002** | **0.01217 ± 0.00004** | **32.8** |
+| U-Net-M v-pred（phase 6） | 0.01473 ± 0.00012 | 0.01350 ± 0.00004 | 0.01734 ± 0.00011 | 48.7 |
+| **U-Net-M x-pred（C3）** | **0.01340 ± 0.00000** | 0.01290 ± 0.00000 | 0.01299 ± 0.00002 | **30.0** |
+| U-Net baseline（確定性，Phase 4） | 0.01209 ± 0.00004 | – | – | 33.1 |
+
+（U-Net x-pred 三個 seed 的 K=1 是 0.013409 / 0.013401 / 0.013404，std 約 4e-6，不是寫錯。）
+
+**選定的設定：x-pred + patch 4 + QK-norm**（D-042）。val 和 test 都最好，seed 之間的變異最小（std 從 0.00039 降到 0.00003），訓練每步快 3 倍（patch 4 的 token 數只有 1/4），推論也快約 5 倍。D-019 擔心的「patch 4 時 y_t 傳不過去」在 x-pred 下不成立，因為模型預測的是乾淨的場，不需要把逐像素的噪聲傳到輸出。
+
+### C3 U-Net x-pred 對照（D-040）
+
+U-Net-M 只把 v-pred 換成 x-pred（`t_floor` 0.05），其他完全相同。3 seeds，50k 步，0/3 發散（clip 之前的 grad norm 最大 4–5）。val 在第 30k 步最好（0.01328），之後微幅變差到 0.01341，所以 best.pt 在 30k 步。
+
+- **x-pred 對 U-Net 的幫助比對 DiT 還大**：N20 K1 0.01473 → 0.01340（−9.0%），K5 0.01350 → 0.01290（−4.4%），NFE 1 0.01734 → 0.01299（−25%）。FE 從 48.7 降到 30.0，**比確定性 baseline（33.1）還好**。
+- DiT 的對照（同樣有 QK-norm）：v-pred patch 2 → x-pred patch 4，N20 K1 從 0.01560 降到 0.01525（−2.2%）。
+- **結論：C2 選到的改善主要來自 x-pred 這個參數化方式，不是 DiT backbone。** 換成 x-pred 之後，U-Net-M 仍然比 DiT-M 好（0.01340 vs 0.01525）。和確定性 U-Net baseline 相比，FM U-Net-M x-pred 在 K=1 還差 11%，在 K=5 還差 7%，但頻譜指標 FE 已經比 baseline 好。
+
+### C4 長訓練
+
+延到下個週期（D-041）。用的設定：x-pred + patch 4 + QK-norm（DiT），並且應該讓 U-Net x-pred 也一起跑。U-Net x-pred 在 30k 步之後 val 微幅變差，所以 WSD 的衰減段長度要調。
+
+### 對報告的影響
+
+- Phase 6 主表的 DiT-M 數字（real、finetune）來自發散前的 checkpoint（提早停止）。新設定下 DiT 不再發散，正式比較應該改用 C2 選出的設定重訓所有條件（numerical、real、finetune）和大小。
+- x-pred 對 U-Net 也有效，Phase 6 的 FM U-Net 結果應該補上 x-pred 版本。
+- FM 的 RMSE 要連同 NFE 一起報告（B4）。
+
+---
+
+## 產出總覽
+
+| 項目 | 路徑 |
+|---|---|
+| A1 | `$R/v2.0.1/transolver_rebound/`；`scripts/transolver_rebound.py` |
+| B1 | `$R/cost/asrun.{csv,md}`；`scripts/cost_asrun.py` |
+| B2/B3 | `$F/b3_bench/bench.json`、`$R/cost/cost_table.md`；`scripts/bench_cost.py`、`scripts/cost_summary.py table` |
+| B4 | `$F/b4_pareto/*.json`、`$R/cost/pareto.{png,csv}`；`scripts/eval_fm.py`、`scripts/cost_summary.py pareto` |
+| C0 | `$F/c0_diag/*.json`、`$F/c_stability/{divergence_table,c0_diag_table}.md`；`fm/tests/diag_stability.py`、`scripts/c_stability.py align/diag` |
+| C1 | `$F/c1_resume/*/`、`$F/c_stability/c1_resume.png`；`scripts/c_stability.py c1` |
+| C2/C3 | `$F/c2/*/`（訓練）、`$F/c2_test/*.json`（test）、`$F/c_stability/{c2_screen.png, c2_table.md, c2_test.md}`；`fm/configs/cylinder/c2/` |
+| 程式改動 | `fm/backbones/dit.py`（`qk_norm`）、`fm/build.py`（`pred: x`）、`fm/paths.py`（Heun）、`fm/train_fm.py`（`--resume`、`--stop-at`、`--beta2`、`--attn-every`、clip 比例）、`fm/diag.py`、`slurm/pack.sh` |
+| 每個 job 的指令清單 | `jobs/lists/*.txt`（每行的輸出 log 在同目錄的 `*.txt.<i>.log`，不進 git） |

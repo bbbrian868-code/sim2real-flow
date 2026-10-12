@@ -202,7 +202,7 @@ def c2_runs(cfg):
 def cmd_c2():
     # success reference: mean over seeds 0-2 of the current setting's best (pre-divergence) val RMSE
     pre_best = float(np.mean([min(r["val"]["rmse"] for r in load(d)[1]) for d in c2_runs("base")[:3]]))
-    fig, ax = plt.subplots(2, 4, figsize=(18, 7.5), sharex=True)
+    fig, ax = plt.subplots(2, 4, figsize=(18, 8), sharex=True, sharey="row")
     rows = []
     for j, (cfg, label) in enumerate(C2_CFG):
         for i, d in enumerate(c2_runs(cfg)):
@@ -228,10 +228,12 @@ def cmd_c2():
         ax[0, j].legend(fontsize=7, frameon=False)
         ax[1, j].set_xlabel("step")
         style(ax[0, j]); style(ax[1, j])
-    ax[0, 0].set_ylabel("val RMSE (subset, N=10); dashed = mean best pre-divergence val, current setting s0-2")
-    ax[1, 0].set_ylabel("max attention logit over blocks\n(logged every 250 steps; new runs only)")
+    ax[0, 0].set_ylabel("val RMSE (subset, N=10)")
+    ax[1, 0].set_ylabel("max attention logit over blocks")
+    fig.text(0.5, 0.01, "dashed: mean best pre-divergence val of the current setting (seeds 0-2); "
+             "logits logged every 250 steps, new runs only", ha="center", fontsize=9, color=MUTED)
     fig.suptitle("C2 screening: DiT-M, real, 50k steps")
-    fig.tight_layout(); fig.savefig(f"{OUT}/c2_screen.png", dpi=120)
+    fig.tight_layout(rect=(0, 0.03, 1, 1)); fig.savefig(f"{OUT}/c2_screen.png", dpi=120)
     json.dump({"pre_best_current": pre_best, "rows": rows}, open(f"{OUT}/c2_table.json", "w"), indent=1)
     with open(f"{OUT}/c2_table.md", "w") as f:
         f.write(f"Reference: mean over seeds 0-2 of the current setting's best (pre-divergence) val = {pre_best:.5f}\n\n")
@@ -243,6 +245,36 @@ def cmd_c2():
     print(open(f"{OUT}/c2_table.md").read())
 
 
+def cmd_c2test():
+    """Test RMSE (2.0.1 real test, EMA, last = best checkpoint) per C2/C3 config, mean +- std over seeds,
+    next to the phase-6 numbers of the current DiT-M and U-Net-M (pre-divergence / best checkpoints)."""
+    groups = [("DiT-M current (phase 6, pre-divergence ckpt)", f"{R}/phase6_test", ["dit_M_real_s0b", "dit_M_real_s1", "dit_M_real_s2"]),
+              ("DiT-M + QK-norm", f"{R}/c2_test", ["qk_s0", "qk_s1", "qk_s2"]),
+              ("DiT-M + QK-norm + beta2 0.95", f"{R}/c2_test", ["qk_b95_s0", "qk_b95_s1", "qk_b95_s2"]),
+              ("DiT-M x-pred p4 + QK-norm", f"{R}/c2_test", ["xp4_qk_s0", "xp4_qk_s1", "xp4_qk_s2"]),
+              ("U-Net-M v-pred (phase 6)", f"{R}/phase6_test", ["unet_M_real_s0b", "unet_M_real_s1", "unet_M_real_s2"]),
+              ("U-Net-M x-pred (C3)", f"{R}/c2_test", ["unet_xp_s0", "unet_xp_s1", "unet_xp_s2"])]
+    nfe1 = f"{R}/b4_pareto"
+    rows = []
+    for label, d, runs in groups:
+        r = {"group": label}
+        for tag in ("N20_K1", "N20_K5"):
+            v = [json.load(open(f"{d}/{x}_{tag}.json"))["metrics"] for x in runs if os.path.exists(f"{d}/{x}_{tag}.json")]
+            r[tag] = (np.mean([m["rmse"] for m in v]), np.std([m["rmse"] for m in v], ddof=1), len(v)) if len(v) > 1 else None
+            r[tag + "_fe"] = np.mean([m["freq_error"] for m in v]) if v else None
+        v = [json.load(open(f))["metrics"]["rmse"] for x in runs for f in (f"{nfe1}/{x}_N1_K1.json", f"{R}/c2_test/{x}_N1_K1.json") if os.path.exists(f)]
+        r["N1_K1"] = (np.mean(v), np.std(v, ddof=1), len(v)) if len(v) > 1 else None
+        rows.append(r)
+    fmt = lambda t: f"{t[0]:.5f} ± {t[1]:.5f} (n={t[2]})" if t else "–"
+    with open(f"{OUT}/c2_test.md", "w") as f:
+        f.write("| config | test RMSE N=20 K=1 | N=20 K=5 | Euler NFE 1 | FE (N=20 K=1) |\n|---|---|---|---|---|\n")
+        for r in rows:
+            f.write(f"| {r['group']} | {fmt(r['N20_K1'])} | {fmt(r['N20_K5'])} | {fmt(r['N1_K1'])} | "
+                    f"{('%.1f' % r['N20_K1_fe']) if r['N20_K1_fe'] else '–'} |\n")
+        f.write("\nU-Net baseline (deterministic, Phase 4): 0.01209 ± 0.00004, FE 33.1\n")
+    print(open(f"{OUT}/c2_test.md").read())
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    {"align": cmd_align, "diag": cmd_diag, "c1": cmd_c1, "c2": cmd_c2}[sys.argv[1]]()
+    {"align": cmd_align, "diag": cmd_diag, "c1": cmd_c1, "c2": cmd_c2, "c2test": cmd_c2test}[sys.argv[1]]()

@@ -16,9 +16,11 @@ BENCH = f"{R}/fm/b3_bench/bench.json"
 B4 = f"{R}/fm/b4_pareto"
 # U-Net baseline real test RMSE (Phase 4, 3 seeds) -- docs/REPORT_phase0-4 Section 5.2
 UNET_BASELINE_RMSE = (0.01209, 0.00004)
-COLORS = {"FM U-Net-M": "#2a78d6", "FM DiT-M": "#eb6834", "FM U-Net-L": "#1baf7a", "FM DiT-M x-pred p4 QK (C2)": "#4a3aa7"}
+COLORS = {"FM U-Net-M": "#2a78d6", "FM DiT-M": "#eb6834", "FM U-Net-L": "#1baf7a", "FM DiT-M x-pred p4 QK (C2)": "#4a3aa7",
+          "FM U-Net-M x-pred (C3)": "#e87ba4"}
 FAMILIES = list(COLORS)
-FAMILY_OF = {"unet_M": "FM U-Net-M", "dit_M": "FM DiT-M", "unet_L": "FM U-Net-L", "xp4_qk": "FM DiT-M x-pred p4 QK (C2)"}
+FAMILY_OF = {"unet_M": "FM U-Net-M", "dit_M": "FM DiT-M", "unet_L": "FM U-Net-L", "xp4_qk": "FM DiT-M x-pred p4 QK (C2)",
+             "unet_xp": "FM U-Net-M x-pred (C3)"}
 INK, MUTED = "#0b0b0b", "#8a8984"
 
 ROWS = [  # label, bench key, as-run rows (method, setting) from asrun.csv
@@ -86,7 +88,8 @@ def cmd_pareto():
     lat = {"FM U-Net-M": b["fm_unet_M"]["infer_fp32_b64"]["median_s"] / 64,
            "FM DiT-M": b["fm_dit_M"]["infer_fp32_b64"]["median_s"] / 64,
            "FM U-Net-L": b["fm_unet_L"]["infer_fp32_b64"]["median_s"] / 64,
-           "FM DiT-M x-pred p4 QK (C2)": b["fm_dit_M_xp4_qk"]["infer_fp32_b64"]["median_s"] / 64}
+           "FM DiT-M x-pred p4 QK (C2)": b["fm_dit_M_xp4_qk"]["infer_fp32_b64"]["median_s"] / 64,
+           "FM U-Net-M x-pred (C3)": b["fm_unet_M"]["infer_fp32_b64"]["median_s"] / 64}  # same network as U-Net-M
     base_t = b["official_unet"]["infer_fp32_b64"]["median_s"] / 64 if "median_s" in b["official_unet"].get("infer_fp32_b64", {}) else None
     rows = []
     for f in glob.glob(f"{B4}/*.json"):
