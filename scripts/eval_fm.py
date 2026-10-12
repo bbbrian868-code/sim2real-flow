@@ -2,7 +2,8 @@
 
   python eval_fm.py --run RUN_DIR [--ckpt best.pt] --data-root ROOT --out-dir DIR --nk 20,1 20,5 [--split test]
                     [--solver euler|heun]
-Writes DIR/<run>_N{N}_K{K}.json (Heun: <run>_heun{N}_K{K}.json, N = steps, NFE = 2N) with metrics and metadata.
+Writes DIR/<run>_N{N}_K{K}.json (Heun: <run>_heun{N}_K{K}.json, NFE = 2N; Heun with Euler last step:
+<run>_heunE{N}_K{K}.json, NFE = 2N - 1; N = steps) with metrics and metadata.
 EMA weights are used.
 """
 import argparse, json, os, sys, time
@@ -27,7 +28,8 @@ def main():
     ap.add_argument("--split", default="test", choices=["test", "val"])
     ap.add_argument("--noise-seed", type=int, default=1234)
     ap.add_argument("--batch-size", type=int, default=64)
-    ap.add_argument("--solver", default="euler", choices=["euler", "heun"])
+    ap.add_argument("--solver", default="euler", choices=["euler", "heun", "heun_e"],
+                    help="heun: plain Heun, last correction evaluated at t = 1 (NFE 2N); heun_e: Euler last step (NFE 2N - 1)")
     a = ap.parse_args()
     if not torch.cuda.is_available():
         sys.exit("CUDA not available")
@@ -42,7 +44,7 @@ def main():
         model.load_state_dict(st["ema"]); model.eval()
         for nk in a.nk:
             n, k = map(int, nk.split(","))
-            tag = f"N{n}" if a.solver == "euler" else f"heun{n}"
+            tag = {"euler": f"N{n}", "heun": f"heun{n}", "heun_e": f"heunE{n}"}[a.solver]
             out = os.path.join(a.out_dir, f"{os.path.basename(run.rstrip('/'))}_{tag}_K{k}.json")
             if os.path.exists(out):
                 continue
@@ -52,7 +54,7 @@ def main():
             m = (run_test(env, pred, a.batch_size, device) if a.split == "test"
                  else run_val(env, pred, a.batch_size, device))
             rec = {"run": run, "ckpt": a.ckpt, "ckpt_step": st["step"], "best_val_rmse_subset": st.get("best_val_rmse"),
-                   "N": n, "K": k, "solver": a.solver, "nfe": n * k * (2 if a.solver == "heun" else 1), "noise_seed": a.noise_seed, "split": a.split, "metrics": m,
+                   "N": n, "K": k, "solver": a.solver, "nfe": k * {"euler": n, "heun": 2 * n, "heun_e": 2 * n - 1}[a.solver], "noise_seed": a.noise_seed, "split": a.split, "metrics": m,
                    "train_data_type": rm["train_data_type"], "seconds": time.time() - t0,
                    "meta": meta.collect(data_root=a.data_root, config=rm["config"], seed=rm["seed"],
                                         checkpoint=os.path.join(run, a.ckpt), weights="ema")}

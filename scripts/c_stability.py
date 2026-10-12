@@ -200,7 +200,8 @@ def c2_runs(cfg):
 
 
 def cmd_c2():
-    pre_best = min(json.load(open(f"{d}/done.json"))["best_val_rmse"] for d in c2_runs("base")[:3])
+    # success reference: mean over seeds 0-2 of the current setting's best (pre-divergence) val RMSE
+    pre_best = float(np.mean([min(r["val"]["rmse"] for r in load(d)[1]) for d in c2_runs("base")[:3]]))
     fig, ax = plt.subplots(2, 4, figsize=(18, 7.5), sharex=True)
     rows = []
     for j, (cfg, label) in enumerate(C2_CFG):
@@ -210,7 +211,7 @@ def cmd_c2():
                 continue
             vs, vr = arr(va, "step"), np.array([r["val"]["rmse"] for r in va])
             on = onset(tr)
-            done = os.path.exists(f"{d}/done.json")
+            done = os.path.exists(f"{d}/done.json") or int(arr(tr, "step")[-1]) >= 50000
             rows.append({"config": cfg, "run": os.path.basename(d), "done": done, "last_step": int(arr(tr, "step")[-1]),
                          "diverged_at": on, "collapsed": collapsed(tr, va), "best_step": int(vs[vr.argmin()]),
                          "best_val": float(vr.min()), "final_val": float(vr[-1]),
@@ -227,13 +228,13 @@ def cmd_c2():
         ax[0, j].legend(fontsize=7, frameon=False)
         ax[1, j].set_xlabel("step")
         style(ax[0, j]); style(ax[1, j])
-    ax[0, 0].set_ylabel("val RMSE (subset, N=10); dashed = best pre-divergence val of the current setting")
+    ax[0, 0].set_ylabel("val RMSE (subset, N=10); dashed = mean best pre-divergence val, current setting s0-2")
     ax[1, 0].set_ylabel("max attention logit over blocks\n(logged every 250 steps; new runs only)")
     fig.suptitle("C2 screening: DiT-M, real, 50k steps")
     fig.tight_layout(); fig.savefig(f"{OUT}/c2_screen.png", dpi=120)
     json.dump({"pre_best_current": pre_best, "rows": rows}, open(f"{OUT}/c2_table.json", "w"), indent=1)
     with open(f"{OUT}/c2_table.md", "w") as f:
-        f.write(f"Reference: best pre-divergence val of the current setting (seeds 0-2) = {pre_best:.5f}\n\n")
+        f.write(f"Reference: mean over seeds 0-2 of the current setting's best (pre-divergence) val = {pre_best:.5f}\n\n")
         f.write("| config | run | finished | last step | diverged at | stays collapsed | best step | best val | final val | max attn logit (last log) |\n|---|---|---|---|---|---|---|---|---|---|\n")
         for r in rows:
             f.write(f"| {r['config']} | {r['run']} | {'yes' if r['done'] else 'no'} | {r['last_step']} | {r['diverged_at'] or '–'} | "

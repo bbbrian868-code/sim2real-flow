@@ -36,9 +36,29 @@ def heun_sample(model, cond, shape, n_steps, generator=None):
     return y
 
 
+@torch.no_grad()
+def heun_euler_last_sample(model, cond, shape, n_steps, generator=None):
+    """Heun with an Euler last step (EDM convention), NFE = 2 * n_steps - 1. The plain Heun above evaluates the
+    velocity at t = 1, where the rectified-flow target y1 - y0 is not identifiable from y_t = y1 (the optimal v is
+    ~ y1 itself), which biases the last correction; this variant never evaluates at t = 1."""
+    y = torch.randn(shape, device=cond.device, generator=generator)
+    dt = 1.0 / n_steps
+    for i in range(n_steps):
+        t = torch.full((shape[0],), i * dt, device=cond.device)
+        v0 = model(y, t, cond)
+        if i == n_steps - 1:
+            y = y + dt * v0
+        else:
+            v1 = model(y + dt * v0, t + dt, cond)
+            y = y + 0.5 * dt * (v0 + v1)
+    return y
+
+
 def sample(model, cond, shape, n_steps, generator=None, solver="euler"):
     if solver == "euler":
         return euler_sample(model, cond, shape, n_steps, generator)
     if solver == "heun":
         return heun_sample(model, cond, shape, n_steps, generator)
+    if solver == "heun_e":
+        return heun_euler_last_sample(model, cond, shape, n_steps, generator)
     raise ValueError(solver)
