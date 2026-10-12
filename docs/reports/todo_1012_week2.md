@@ -16,6 +16,20 @@
 
 ---
 
+## 開工前要確認的事（答案）
+
+| 項目 | 答案 |
+|---|---|
+| FM run 的目錄 `<FM_RUNS>` 和報告 | `$F/phase6/<run>/`（`log.jsonl`、`run_meta.json`、`best.pt`、`last.pt`）；報告 `docs/reports/step_6.4_fm_results.md` |
+| checkpoint 有沒有存 optimizer state | 有：`best.pt` 和 `last.pt` 都有 `model`（raw）、`ema`、`opt`、`step`。只有這兩個 checkpoint，沒有其他中間點 → C1 可以做（D-036） |
+| 有沒有記錄 grad norm 或 clip 次數 | phase 6 每 50 步記錄一次單一步的 `grad_norm`（clip 前），沒有 clip 次數。本週起 `train_fm.py` 另外記錄每個 50 步區間的 `clip_frac` 和 `grad_norm_max` |
+| val 用 EMA 還是 raw | EMA（`train_fm.py` 的 val 用 `FMPredictor(ema, …)`）；C0.4 兩者都評估 |
+| 各 seed 回升的步數 | DiT-M real：27400 / 27000 / 27050（s0b / s1 / s2）；DiT-L real 17200；DiT-S numerical 24350、finetune 2650。C2 用完整 50k 步，涵蓋這些步數 |
+| DiT 的條件輸入是否在 token 層級和 y_t 串接 | 是：`embed(cat([y_t, cond]))`，patch 2 時每個 token 是 (60 + 60) × 4 = 480 維。DiT-S（hidden 256）< 480，仍有瓶頸；M（512）、L（768）沒有。x-pred + patch 4 時是 1920 維，但 x-pred 不需要把噪聲傳到輸出 |
+| B3 用哪種 GPU | H200（Nano4 只有 H200），所有模型在同一個 job、同一張卡（D-037） |
+
+---
+
 ## A. Transolver real / finetune 在約 2000 步的 val 回升
 
 **方法**（`scripts/transolver_rebound.py`）：每個 run 一欄，三個面板共用 x 軸：train loss（checkpoint 裡逐步的 `train_losses`，細線是逐步的值，粗線是 100 步平均）、2.0.1 val RMSE（每 100 步）、lr(t)（官方 Adam + `CosineAnnealingLR(T_max=5000)`，每步更新，沒有 warmup，沒有 clipping）。real s0 是 2.0.0 時期的 run（D-017），checkpoint 裡存的 val 是舊 val，所以改用 Step 3.4 在 2.0.1 上重評的曲線。
