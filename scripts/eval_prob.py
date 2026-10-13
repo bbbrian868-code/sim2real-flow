@@ -70,9 +70,13 @@ def evaluate(env, draw, K, batch_size, device, eval_seed=0):
         samples = []
         for k in range(K):
             p = draw(x)
-            if k == 0:
-                nmse += (p[..., :c] - y[..., :c]).pow(2).reshape(b, -1).mean().item()  # official normalized_mse
+            # same round trip as the official N_ar loop (eval.py / pilfm.official_eval.run_test): de-normalize, re-normalize
+            # with the *input* statistics, then de-normalize the concatenated prediction with the target statistics
             _, p_phys = norm.postprocess(x, p)
+            p_rn, _ = norm.preprocess(p_phys, y)
+            _, p_phys = norm.postprocess(x, p_rn)
+            if k == 0:
+                nmse += (p_rn[..., :c] - y[..., :c]).pow(2).reshape(b, -1).mean().item()  # official normalized_mse
             samples.append(p_phys[..., :c].float())
         _, y_phys = norm.postprocess(x, y)
         yc = y_phys[..., :c].float()
