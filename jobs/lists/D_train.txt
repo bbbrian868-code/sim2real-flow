@@ -1,0 +1,6 @@
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_mse.yaml --train-data-type real --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/mse_unet_M_real_s0
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_mse.yaml --train-data-type real --seed 1 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/mse_unet_M_real_s1
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_mse.yaml --train-data-type real --seed 2 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/mse_unet_M_real_s2
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_edm.yaml --train-data-type real --seed 0 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/edm_unet_M_real_s0
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_edm.yaml --train-data-type real --seed 1 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/edm_unet_M_real_s1
+python fm/train_fm.py --config fm/configs/cylinder/D/unet_M_edm.yaml --train-data-type real --seed 2 --iters 50000 --out /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/runs/edm_unet_M_real_s2

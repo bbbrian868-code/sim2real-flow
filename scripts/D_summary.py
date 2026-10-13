@@ -71,6 +71,23 @@ def cmd_curves():
     fig.tight_layout(rect=(0, 0.02, 1, 1)); fig.savefig(f"{D}/curves.png", dpi=120)
     print("wrote", f"{D}/curves.png")
 
+    # all models on one axis: val RMSE, mean over the 3 seeds (band = min..max)
+    fig, a = plt.subplots(figsize=(9, 5.5))
+    for lab in labels:
+        curves = []
+        for d in MODELS[lab][0]:
+            if os.path.exists(f"{d}/log.jsonl"):
+                _, va = load_log(d)
+                curves.append({r["step"]: r["val"]["rmse"] for r in va})
+        steps = sorted(set.intersection(*[set(c) for c in curves]))
+        M = np.array([[c[s_] for s_ in steps] for c in curves])
+        a.plot(steps, M.mean(0), color=COLOR[lab], lw=2, marker="o", ms=3, label=lab)
+        a.fill_between(steps, M.min(0), M.max(0), color=COLOR[lab], alpha=0.2, lw=0)
+    a.set_yscale("log"); a.set_xlabel("step"); a.set_ylabel("val RMSE (536-sample subset, K = 1)")
+    a.set_ylim(0.011, 0.06); style(a); a.legend(frameon=False, fontsize=9)
+    a.set_title("Validation RMSE during training, mean of 3 seeds (band: min-max)", fontsize=11)
+    fig.tight_layout(); fig.savefig(f"{D}/val_compare.png", dpi=130)
+
 
 METRICS = ["rmse", "mae", "rel_l2_error", "r2", "ke_error", "freq_error", "high_f_error"]
 

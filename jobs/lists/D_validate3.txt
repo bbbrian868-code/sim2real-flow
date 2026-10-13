@@ -1,0 +1,2 @@
+python scripts/eval_prob.py --official unet_real_s0=configs/cylinder/unet.yaml:/work/b314513067/pi-lfm/runs/unet/unet_cylinder_real_False/2026-09-15_20-59-14/model_6800.pth --batch-size 12 --out-dir /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/prep/validate3
+python scripts/eval_prob.py --run /work/b314513067/pi-lfm/results/fm/phase6/unet_M_real_s0b --solver euler --steps 20 --K 1 --out-dir /work/b314513067/pi-lfm/results/v2.0.1/baselines_D/prep/validate3
