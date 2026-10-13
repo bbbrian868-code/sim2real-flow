@@ -1,0 +1,37 @@
+# todo_D Step 3 (D-043..): EDM (Karras 2022) diffusion control, same U-Net-M as F_theta and the recipe of unet_M.yaml.
+# Preconditioning c_skip/c_out/c_in, c_noise = ln(sigma)/4 into the time embedding; ln sigma ~ N(-1.2, 1.2^2).
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
+  num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
+model:
+  backbone: unet
+  base_ch: 80
+  channel_mult: [1, 2, 4, 4]
+  num_res_blocks: 2
+  bottleneck_attn: false
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 100000         # placeholder; the real budget is decided after Step 5.5 (D-013)
+  clip_grad: 1.0
+  objective: edm
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 5           # EDM: Heun with Euler last step, 5 steps = NFE 9 (FM val: Euler 10 steps = NFE 10)
+  solver: heun_e
+  noise_seed: 0
+  every: 2000
+  batch_size: 64
+edm:
+  sigma_data: 0.60      # std of the normalized real-train targets over u, v (D-045); all channels incl. the constant p: 0.498
+  P_mean: -1.2
+  P_std: 1.2
+  sigma_min: 0.002
+  sigma_max: 80.0
+  rho: 7.0

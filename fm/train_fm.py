@@ -19,6 +19,7 @@ from fm.build import build_model, n_params
 from fm.paths import fm_loss, euler_sample
 from fm.wrapper import FMPredictor, fold
 from fm import diag
+from fm import objectives
 
 T_IN, T_OUT, C = 20, 20, 3
 H, W = 64, 128
@@ -78,6 +79,9 @@ def main():
                     help="C1: load model/EMA/optimizer and the step from this checkpoint; the schedule continues")
     ap.add_argument("--stop-at", type=int, default=None,
                     help="stop (val + save) at this step while keeping the lr schedule of --iters (C1 resumes)")
+    ap.add_argument("--objective", default=None, choices=["fm", "mse", "edm"],
+                    help="todo_D controls (default: train.objective in the config, else fm): mse = deterministic "
+                         "regression with the same network, edm = Karras 2022 diffusion (needs the config's edm section)")
     ap.add_argument("--beta2", type=float, default=None, help="override train.betas[1] (also on --resume)")
     ap.add_argument("--attn-every", type=int, default=0,
                     help="DiT only: every N steps log attention logit/entropy, adaLN and q/k weight stats (rank 0)")
@@ -128,7 +132,13 @@ def main():
     env = Env(dc["root"], num_workers=dc["num_workers"], need_test=False, need_val=(rank == 0 and not args.no_val))
     norm = env.normalizer(device)
 
-    model = build_model(cfg["model"], T_OUT * C + T_IN * C, T_OUT * C, H, W).to(device)
+    objective = args.objective or tc.get("objective", "fm")
+    cfg["train"]["objective"] = objective
+    ec = cfg.get("edm", {})
+    model = build_model(cfg["model"], T_OUT * C + T_IN * C, T_OUT * C, H, W)
+    if objective == "edm":
+        model = objectives.build_edm(model, ec)
+    model = model.to(device)
     if args.init_from:
         src = torch.load(args.init_from, map_location="cpu", weights_only=False)
         model.load_state_dict(src["ema"])
@@ -156,7 +166,7 @@ def main():
     info = meta.collect(data_root=dc["root"], config=cfg_text, seed=args.seed, checkpoint=args.init_from,
                         train_data_type=args.train_data_type, world_size=world, per_rank_batch=bs, iters=iters,
                         lr=base_lr, n_params=n_params(model), init_from=args.init_from, resume=args.resume,
-                        resume_step=start, betas=betas)
+                        resume_step=start, betas=betas, objective=objective)
     if rank == 0:
         json.dump(info, open(os.path.join(args.out, "run_meta.json"), "w"), indent=1)
         log = open(os.path.join(args.out, "log.jsonl"), "a")
@@ -191,7 +201,12 @@ def main():
         for gr in opt.param_groups:
             gr["lr"] = lr_at(step, base_lr, warmup, iters)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            loss = fm_loss(net, y1, cond, y0, t)  # loss itself is computed in fp32 inside fm_loss
+            if objective == "fm":
+                loss = fm_loss(net, y1, cond, y0, t)  # loss itself is computed in fp32 inside fm_loss
+            elif objective == "mse":
+                loss = objectives.mse_loss(net, y1, cond)
+            else:
+                loss = objectives.edm_loss(net, y1, cond, ec.get("P_mean", -1.2), ec.get("P_std", 1.2))
         opt.zero_grad(set_to_none=True)
         loss.backward()
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), tc["clip_grad"])
@@ -230,9 +245,10 @@ def main():
         if (step + 1) % val_every == 0 or last:
             if rank == 0:
                 state = dict(model=model.state_dict(), ema=ema.state_dict(), opt=opt.state_dict(), step=step + 1,
-                             config=cfg, meta=info, best_val_rmse=best)
+                             config=cfg, meta=info, best_val_rmse=best, objective=objective)
                 if not args.no_val:
-                    pred = FMPredictor(ema, T_OUT, C, n_steps=vc["n_steps"], n_samples=1, seed=vc["noise_seed"])
+                    pred = FMPredictor(ema, T_OUT, C, n_steps=vc["n_steps"], n_samples=1, seed=vc["noise_seed"],
+                                       solver=vc.get("solver", "euler"), objective=objective)
                     m = run_val(env, pred, vc.get("batch_size", 64), device, metrics_device="cpu", batches=vb)
                     rec = {"step": step + 1, "val": m}
                     log.write(json.dumps(rec) + "\n"); log.flush()

@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from fm.paths import sample
+from fm import objectives
 
 
 def fold(x):
@@ -24,9 +25,10 @@ class FMPredictor(nn.Module):
     The noise generator is seeded once; call reset() to replay the same noise sequence.
     """
 
-    def __init__(self, model, T_out, C_out, n_steps=20, n_samples=1, seed=0, solver="euler"):
+    def __init__(self, model, T_out, C_out, n_steps=20, n_samples=1, seed=0, solver="euler", objective="fm"):
         super().__init__()
         self.model, self.T_out, self.C_out, self.solver = model, T_out, C_out, solver
+        self.objective = objective  # todo_D: "mse" (one deterministic forward) or "edm" (EDMPrecond model)
         self.n_steps, self.n_samples, self.seed = n_steps, n_samples, seed
         self.gen = None
 
@@ -42,5 +44,14 @@ class FMPredictor(nn.Module):
         shape = (B, self.T_out * self.C_out, H, W)
         acc = torch.zeros(shape, device=cond.device)
         for _ in range(self.n_samples):
-            acc += sample(self.model, cond, shape, self.n_steps, generator=self.gen, solver=self.solver).float()
+            acc += self.draw(cond, shape).float()
         return unfold(acc / self.n_samples, self.T_out, self.C_out)
+
+    @torch.no_grad()
+    def draw(self, cond, shape):
+        """One sample (B, T*C, H, W) in normalized space."""
+        if self.objective == "mse":
+            return objectives.mse_predict(self.model, cond, shape)
+        if self.objective == "edm":
+            return objectives.edm_sample(self.model, cond, shape, self.n_steps, generator=self.gen, solver=self.solver)
+        return sample(self.model, cond, shape, self.n_steps, generator=self.gen, solver=self.solver)
