@@ -180,8 +180,17 @@ def cmd_summary():
             for a, k in ((ax[0], "kmean_rmse"), (ax[1], "crps")):
                 a.errorbar([1], [o[k + "_mean"]], yerr=[o[k + "_std"] or 0], color=COLOR[model], marker=mk, ms=12, ls="none",
                            capsize=2, label=model + " (1 forward)")
-    for a, yl in zip(ax, ["real test RMSE of the K-sample mean (K = 16; deterministic: K = 1)", "CRPS (fair, K = 16; deterministic: MAE)"]):
+    # EDM Heun at NFE 3 / 5 (/ 9) diverges by orders of magnitude; zoom to the useful range and list what is off scale
+    lims = {"kmean_rmse": (0.0118, 0.0142), "crps": (0.0036, 0.0058)}
+    for a, yl, k in zip(ax, ["real test RMSE of the K-sample mean (K = 16; deterministic: K = 1)",
+                             "CRPS (fair, K = 16; deterministic: MAE)"], ["kmean_rmse", "crps"]):
         a.set_xscale("log"); a.set_xlabel("NFE (Heun: 2 per step, Euler last step)"); a.set_ylabel(yl); style(a)
+        a.set_ylim(*lims[k])
+        off = [o for o in A if o["K"] > 1 and o[k + "_mean"] > lims[k][1]]
+        if off:
+            a.text(0.98, 0.97, "off scale: " + ", ".join(f"{o['model'].split(' U-Net')[0]} {'Heun' if o['solver'] == 'heun_e' else 'Euler'} "
+                                                         f"NFE {o['nfe']} = {o[k + '_mean']:.3g}" for o in sorted(off, key=lambda o: o["nfe"])),
+                   transform=a.transAxes, ha="right", va="top", fontsize=8, color=MUTED, wrap=True)
     h, l = ax[0].get_legend_handles_labels()
     fig.legend(h, l, loc="lower center", ncol=3, fontsize=9, frameon=False)
     fig.suptitle("Same U-Net-M backbone and recipe: FM vs EDM vs MSE regression (2.0.1 real test, 3 seeds)")
