@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pilfm import meta
 from pilfm.fast_dataset import FastCylinderHFDataset
 from pilfm.official_eval import Env, run_val
-from fm.build import build_model, n_params
+from fm.build import build_model, n_params, target_t_clip
 from fm.paths import fm_loss, euler_sample
 from fm.wrapper import FMPredictor, fold
 from fm import diag
@@ -108,6 +108,7 @@ def main():
     iters = args.iters or tc["iters"]
     val_every = args.val_every or vc["every"]
     warmup = tc["warmup"] if args.warmup is None else args.warmup
+    save_every = tc.get("save_every", 0)  # D28: full-state step{N}.pt every N iters; 0 = off (original behavior)
     gbs = tc["batch_size"]
     assert gbs % world == 0
     bs = gbs // world
@@ -135,6 +136,15 @@ def main():
     objective = args.objective or tc.get("objective", "fm")
     cfg["train"]["objective"] = objective
     ec = cfg.get("edm", {})
+    t_clip = target_t_clip(cfg["model"])  # None = original target y1 - y0
+    if t_clip is not None and objective != "fm":
+        raise ValueError("target_clip applies to the fm objective only")
+    # dit_xpred_width Step 3: training diagnostics, off unless the config has diag.every > 0 (see the diag block below)
+    dg = cfg.get("diag", {})
+    diag_every = dg.get("every", 0)
+    stop_bad = dg.get("stop_on_nonfinite", True)  # D26: a NaN/Inf update poisons weights, EMA and Adam state for good
+    if diag_every and (objective != "fm" or args.no_val):
+        raise ValueError("diag needs the fm objective and the val subset (its first batch is the denoising batch)")
     model = build_model(cfg["model"], T_OUT * C + T_IN * C, T_OUT * C, H, W)
     if objective == "edm":
         model = objectives.build_edm(model, ec)
@@ -181,6 +191,16 @@ def main():
     t_last, n_last = time.time(), 0
     n_clip, gmax = 0, 0.0
     attn_gen = torch.Generator(device=device).manual_seed(12345)  # separate stream: training RNG is untouched
+    if diag_every:
+        buckets = diag.TBuckets(device)
+        g_sum, g_max, g_n, n_bad, first_bad = 0.0, 0.0, 0, 0, None
+        if rank == 0:
+            # fixed denoising batch: the first val-subset batch, normalized like training, with a fixed noise draw
+            dx, dy = norm.preprocess(vb[0][0].to(device), vb[0][1].to(device))
+            dcond, dy1 = fold(dx), fold(dy)
+            dy0 = torch.randn(dy1.shape, device=device,
+                              generator=torch.Generator(device=device).manual_seed(dg.get("noise_seed", 0)))
+            d_ts = dg.get("denoise_t", [0.1, 0.3, 0.5, 0.7, 0.9])
     torch.cuda.reset_peak_memory_stats(device)
     end = min(iters, args.stop_at or iters)
     for step in range(start, end):
@@ -201,8 +221,11 @@ def main():
         for gr in opt.param_groups:
             gr["lr"] = lr_at(step, base_lr, warmup, iters)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            if objective == "fm":
-                loss = fm_loss(net, y1, cond, y0, t)  # loss itself is computed in fp32 inside fm_loss
+            if objective == "fm" and diag_every:
+                loss, per_sample, t_used = fm_loss(net, y1, cond, y0, t, t_clip, per_sample=True)
+                buckets.add(per_sample, t_used)
+            elif objective == "fm":
+                loss = fm_loss(net, y1, cond, y0, t, t_clip)  # loss itself is computed in fp32 inside fm_loss
             elif objective == "mse":
                 loss = objectives.mse_loss(net, y1, cond)
             else:
@@ -213,6 +236,28 @@ def main():
         g = float(gnorm)
         n_clip += g > tc["clip_grad"]
         gmax = max(gmax, g) if math.isfinite(g) else float("inf")
+        if diag_every:
+            g_sum, g_n = g_sum + g, g_n + 1
+            g_max = max(g_max, g) if math.isfinite(g) else float("inf")
+            # grads are all-reduced, so a non-finite loss on any rank shows up in g on every rank
+            if not (math.isfinite(g) and math.isfinite(loss.item())):
+                n_bad += 1
+                if first_bad is None:
+                    first_bad = step + 1
+                    if rank == 0:  # weights before this update, plus the step's loss / grad norm
+                        rec = {"step": step + 1, "nonfinite": {"loss": loss.item(), "grad_norm": g}}
+                        log.write(json.dumps(rec) + "\n"); log.flush()
+                        print(json.dumps(rec), flush=True)
+                        save(os.path.join(args.out, f"nonfinite_step{step + 1}.pt"), model=model.state_dict(),
+                             ema=ema.state_dict(), opt=opt.state_dict(), step=step, config=cfg, meta=info)
+                if stop_bad:  # every rank sees the same g, so all ranks stop here; no val / done.json / last.pt
+                    if rank == 0:
+                        rec = {"step": step + 1, "stopped": "nonfinite"}
+                        log.write(json.dumps(rec) + "\n"); log.flush()
+                        print(json.dumps(rec), flush=True)
+                    if ddp:
+                        dist.destroy_process_group()
+                    sys.exit(3)
         opt.step()
         ema_update(ema, model, ema_decay(step))
         n_last += gbs
@@ -241,6 +286,27 @@ def main():
             model.train()
             log.write(json.dumps(rec) + "\n"); log.flush()
 
+        if diag_every and (step + 1) % diag_every == 0:
+            bl, bn = buckets.flush(ddp)  # collective: every rank
+            if rank == 0:
+                rec = {"t_bucket_loss": bl, "t_bucket_n": bn, "grad_norm_mean": g_sum / g_n, "grad_norm_max": g_max,
+                       "n_nonfinite": n_bad, "first_nonfinite_step": first_bad, "denoise": {}}
+                model.eval()
+                for tag, m_ in (("raw", model), ("ema", ema)):
+                    rec["denoise"][tag] = diag.denoise_error(m_, dy1, dcond, d_ts, dy0)
+                if diag.dit_of(model) is not None:  # same inputs as --attn-every: 4 training samples, separate RNG
+                    y0a = torch.randn(y1[:4].shape, device=device, generator=attn_gen)
+                    ta = torch.rand(y1[:4].shape[0], device=device, generator=attn_gen)
+                    yta = (1 - ta.view(-1, 1, 1, 1)) * y0a + ta.view(-1, 1, 1, 1) * y1[:4]
+                    ml = diag.attn_stats(model, yta, ta, cond[:4])["max_logit"]
+                    rec["attn_max_logit"], rec["attn_max_logit_all"] = ml, max(ml)
+                    # D26: also on the fixed denoising batch at each denoise t (raw weights)
+                    rec["attn_fixed"] = diag.attn_max_logit_fixed(model, dy1, dcond, d_ts, dy0)
+                model.train()
+                rec = {"step": step + 1, "diag": rec}
+                log.write(json.dumps(rec) + "\n"); log.flush()
+            g_sum, g_max, g_n = 0.0, 0.0, 0
+
         last = step + 1 == end
         if (step + 1) % val_every == 0 or last:
             if rank == 0:
@@ -260,6 +326,9 @@ def main():
                 save(os.path.join(args.out, "last.pt"), **state)
             if ddp:
                 dist.barrier()
+        if save_every and (step + 1) % save_every == 0 and rank == 0:  # D28: kept snapshots for later analysis
+            save(os.path.join(args.out, f"step{step + 1}.pt"), model=model.state_dict(), ema=ema.state_dict(),
+                 opt=opt.state_dict(), step=step + 1, config=cfg, meta=info, best_val_rmse=best, objective=objective)
     if rank == 0:
         json.dump({"step": end, "best_val_rmse": best}, open(os.path.join(args.out, "done.json"), "w"))
     if args.fixed_batch and rank == 0:

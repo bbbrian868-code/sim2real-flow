@@ -20,11 +20,25 @@ class XPredVelocity(nn.Module):
         return (x.float() - yt.float()) / denom
 
 
+def target_t_clip(mcfg):
+    """dit_xpred_width (D4/D18): `target_clip: true` makes the FM target use the clipped denominator
+    max(1 - t, t_clip) that the x-pred model uses, for pred v and x alike. Returns t_clip, or None for the original
+    target y1 - y0 (default). t_clip replaces t_floor in that mode, so setting both, or t_clip alone, is an error."""
+    if not mcfg.get("target_clip", False):
+        if "t_clip" in mcfg:
+            raise ValueError("t_clip is only used with target_clip: true (the original mode uses t_floor)")
+        return None
+    if "t_floor" in mcfg:
+        raise ValueError("target_clip: true uses t_clip; remove t_floor")
+    return float(mcfg.get("t_clip", 0.05))
+
+
 def build_model(mcfg, in_ch, out_ch, height, width):
     kind = mcfg["backbone"]
     pred = mcfg.get("pred", "v")
-    t_floor = mcfg.get("t_floor", 0.05)
-    kw = {k: v for k, v in mcfg.items() if k not in ("backbone", "pred", "t_floor")}
+    t_clip = target_t_clip(mcfg)
+    t_floor = mcfg.get("t_floor", 0.05) if t_clip is None else t_clip
+    kw = {k: v for k, v in mcfg.items() if k not in ("backbone", "pred", "t_floor", "t_clip", "target_clip")}
     if kind == "unet":
         net = UNet2D(in_ch, out_ch, **kw)
     elif kind == "dit":

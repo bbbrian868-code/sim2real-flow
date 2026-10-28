@@ -1,0 +1,39 @@
+# dit_xpred_width R3 (docs/dit_xpred_width, DECISIONS.md D2/D5/D18/D19/D21): v-pred, width 768, 12 heads (head dim 64).
+# Patch 4 + QK-norm; FM target (y1 - y_t) / max(1 - t, t_clip) for both pred modes. Otherwise identical to c2/dit_M_xp4_qk.yaml.
+data:
+  root: "/work/b314513067/pi-lfm/data_v2.0.1"
+  mask_prob: 0.5        # official U-Net cylinder value (configs/cylinder/unet.yaml:17), see D-010
+  noise_scale: 0.1      # official value; multiplicative gaussian on input AND target (numerical only)
+  num_workers: 12
+  cache_dir: "/work/b314513067/pi-lfm/cache/v2.0.1"   # scripts/build_cache.py; bitwise == official slices (test f)
+model:
+  backbone: dit
+  patch: 4              # output token dim 60 * 4^2 = 960 (D12, D19)
+  dim: 768
+  depth: 8
+  heads: 12
+  mlp_ratio: 4.0
+  qk_norm: true
+  pred: v
+  target_clip: true
+  t_clip: 0.05
+train:
+  batch_size: 64        # global
+  lr: 1.0e-4
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  warmup: 1000
+  iters: 50000          # D16
+  clip_grad: 1.0
+  save_every: 5000      # D28: full-state step{N}.pt snapshots (model, EMA, optimizer)
+val:
+  subset_stride: 9      # every 9th real-val sample -> 536 samples (D-011)
+  n_steps: 10
+  noise_seed: 0
+  every: 2000
+  batch_size: 64
+diag:                   # Step 3 training diagnostics (D26)
+  every: 1000           # every val step (2000) also has a diag record
+  denoise_t: [0.1, 0.3, 0.5, 0.7, 0.9]
+  noise_seed: 0
+  stop_on_nonfinite: true

@@ -3,6 +3,8 @@
 (a) shapes + fold/unfold invertibility      (b) Euler sampler exactness on an analytic field
 (c) initial loss == E[(y1 - y0)^2] with zero-init output (reports the value on real data with --data)
 (e) checkpoint round-trip (model, EMA, optimizer)
+(g) target_clip / t_clip (dit_xpred_width Step 1): target == x - eps for t < 1 - t_clip, oracle loss 0, oracle sampling
+(h) training diagnostics (dit_xpred_width Step 3): per-sample loss path, t buckets, single-step denoising error, fixed-batch attention max logit
 (f) FastCylinderHFDataset == official CylinderHFDataset, bitwise, same RNG state (with --data)
 (d) evaluation-path consistency needs the full test set; see fm/tests/check_eval_path.py (GPU job)
 """
@@ -123,6 +125,132 @@ def test_roundtrip():
     print("  (e) model / EMA outputs identical after reload; one more optimizer step also identical")
 
 
+def test_target_clip():
+    """dit_xpred_width Step 1: target_clip / t_clip (D3, D4, D18). Synthetic tensors, fp32."""
+    from fm.build import XPredVelocity, target_t_clip
+    tc = 0.05
+    g = torch.Generator().manual_seed(2)
+    B = 4096
+    y1, y0 = torch.randn(B, 6, 4, 8, generator=g), torch.randn(B, 6, 4, 8, generator=g)
+    cond = torch.zeros(B, 1, 4, 8)
+    t = torch.rand(B, generator=g)
+    tt = t.view(-1, 1, 1, 1)
+    yt = (1 - tt) * y0 + tt * y1
+    target = (y1 - yt) / (1 - tt).clamp(min=tc)
+    lo = t < 1 - tc
+    err = (target[lo] - (y1 - y0)[lo]).abs().max().item()
+    assert err < 1e-4, err
+    print(f"  (g1) t < 0.95 ({int(lo.sum())} of {B}): max|v_target - (x - eps)| = {err:.3e}")
+
+    class Const(torch.nn.Module):  # oracle backbone: returns a fixed tensor, ignores its input
+        def __init__(self, out):
+            super().__init__(); self.out = out
+        def forward(self, x, t, cond):
+            return self.out
+
+    class VOracle(torch.nn.Module):  # v-pred oracle: the clipped target computed from the current y_t
+        def forward(self, x, t, cond):
+            return (y1 - x) / (1 - t).clamp(min=tc).view(-1, 1, 1, 1)
+
+    x_or = XPredVelocity(Const(y1), tc)
+    res = {}
+    for name, m, clip in (("x-pred, target_clip", x_or, tc), ("v-pred, target_clip", VOracle(), tc),
+                          ("x-pred, original target", x_or, None), ("v-pred = x - eps, target_clip", Const(y1 - y0), tc)):
+        res[name] = fm_loss(m, y1, cond, y0, t, t_clip=clip).item()
+        print(f"  (g2) oracle loss, {name}: {res[name]:.3e}")
+    assert res["x-pred, target_clip"] < 1e-10 and res["v-pred, target_clip"] < 1e-10
+    assert res["x-pred, original target"] > 1e-3  # only-prediction-clipped mode: oracle is not a minimizer for t > 0.95
+
+    ys = y1[:8]
+    for n in (10, 20, 32):
+        x8 = XPredVelocity(Const(ys), tc)
+        out = euler_sample(x8, torch.zeros(8, 1, 4, 8), ys.shape, n, generator=torch.Generator().manual_seed(0))
+        rel = ((out - ys).flatten(1).norm(dim=1) / ys.flatten(1).norm(dim=1)).max().item()
+        print(f"  (g3) oracle x-pred Euler N={n}: max rel L2 |x_N - x| / |x| = {rel:.3e}")
+        if n <= 20:
+            assert rel < 1e-5, (n, rel)
+
+    assert target_t_clip({"backbone": "dit"}) is None and target_t_clip({"pred": "x", "t_floor": 0.05}) is None
+    assert target_t_clip({"target_clip": True}) == 0.05 and target_t_clip({"target_clip": True, "t_clip": 0.1}) == 0.1
+    for bad in ({"t_clip": 0.05}, {"target_clip": True, "t_floor": 0.05}):
+        try:
+            target_t_clip(bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)
+    m = build_model(dict(CFGS["dit_S"], pred="x", target_clip=True, t_clip=0.1), T * C * 2, T * C, H, W)
+    assert m.t_floor == 0.1
+    print("  (g4) config: default = original target; t_clip without target_clip and t_floor with it are rejected")
+
+
+def test_diag():
+    """dit_xpred_width Step 3: per-sample loss path, t buckets, single-step denoising error, fixed-batch attention max logit (D26). Synthetic, fp32."""
+    from fm.build import XPredVelocity
+    from fm import diag
+    g = torch.Generator().manual_seed(3)
+    B = 512
+    y1, y0 = torch.randn(B, 6, 4, 8, generator=g), torch.randn(B, 6, 4, 8, generator=g)
+    cond = torch.zeros(B, 1, 4, 8)
+    t = torch.rand(B, generator=g)
+    m = build_model(dict(CFGS["dit_S"], patch=4), 7, 6, 4, 8)
+    with torch.no_grad():  # perturb the zero-init output head so the loss depends on the sample
+        for p in m.parameters():
+            p.add_(0.02 * torch.randn(p.shape, generator=g))
+    for clip in (None, 0.05):
+        ref = fm_loss(m, y1, cond, y0, t, t_clip=clip)
+        loss, per, t_out = fm_loss(m, y1, cond, y0, t, t_clip=clip, per_sample=True)
+        assert torch.equal(ref, loss) and torch.equal(t_out, t), clip
+        assert torch.allclose(per.mean(), loss, rtol=1e-5), (per.mean().item(), loss.item())
+    print("  (h1) per_sample=True: same loss (bitwise) and t; mean of per-sample losses == loss")
+
+    tb = diag.TBuckets("cpu")
+    tb.add(torch.tensor([1.0, 3.0, 5.0, 7.0]), torch.tensor([0.05, 0.15, 0.5, 1.0]))
+    tb.add(torch.tensor([9.0]), torch.tensor([0.99]))
+    means, n = tb.flush()
+    assert means == [2.0, None, 5.0, None, 8.0] and n == [2, 0, 1, 0, 2], (means, n)
+    assert tb.flush()[1] == [0] * 5  # flush resets
+    print("  (h2) t buckets: [0,0.2) ... [0.8,1.0] means/counts correct, t = 1 goes to the last bucket, flush resets")
+
+    class VOracle(torch.nn.Module):
+        def forward(self, x, t, cond):
+            return (y1 - x) / (1 - t).view(-1, 1, 1, 1)
+
+    class Const(torch.nn.Module):
+        def __init__(self, out):
+            super().__init__(); self.out = out
+        def forward(self, x, t, cond):
+            return self.out
+
+    ts = [0.1, 0.3, 0.5, 0.7, 0.9]
+    for name, mdl in (("v-pred oracle", VOracle()), ("x-pred oracle", XPredVelocity(Const(y1), 0.05))):
+        e = diag.denoise_error(mdl, y1, cond, ts, y0)
+        worst = max(v["rel_mse_mean"] for v in e.values())
+        assert worst < 1e-10, (name, e)
+    e = diag.denoise_error(Const(torch.zeros_like(y1)), y1, cond, ts, y0)  # v = 0: x_hat = y_t
+    for tv in ts:
+        yt = (1 - tv) * y0 + tv * y1
+        want = ((yt - y1).flatten(1).pow(2).sum(1) / y1.flatten(1).pow(2).sum(1)).mean().item()
+        assert abs(e[f"{tv:g}"]["rel_mse_mean"] - want) < 1e-5 * want, (tv, e[f"{tv:g}"], want)
+    print("  (h3) denoising error: 0 for v- and x-pred oracles; v = 0 gives |y_t - x|^2 / |x|^2 as computed by hand")
+
+    m2 = build_model(dict(CFGS["dit_S"], patch=4), 7, 6, 8, 16)  # 2 x 4 = 8 tokens
+    with torch.no_grad():
+        for p in m2.parameters():
+            p.add_(0.02 * torch.randn(p.shape, generator=g))
+    m2.eval()
+    y1s, y0s, cs = torch.randn(10, 6, 8, 16, generator=g), torch.randn(10, 6, 8, 16, generator=g), torch.randn(10, 1, 8, 16, generator=g)
+    for mdl in (m2, XPredVelocity(m2, 0.05)):
+        a = diag.attn_max_logit_fixed(mdl, y1s, cs, ts, y0s, chunk=3)  # chunks of 3, 3, 3, 1
+        for tv in ts:
+            tt = torch.full((10,), tv)
+            want = diag.attn_stats(mdl, (1 - tv) * y0s + tv * y1s, tt, cs, max_batch=10)["max_logit"]
+            got = a[f"{tv:g}"]
+            assert np.allclose(got["max_logit"], want, rtol=1e-5) and got["max_logit_all"] == max(got["max_logit"]), tv
+    assert diag.attn_max_logit_fixed(Const(y1), y1, cond, ts, y0) is None
+    print("  (h4) fixed-batch attention max logit: chunked == whole batch per layer and t (DiT and x-pred wrapper);"
+          " None for non-DiT")
+
+
 def test_fast_dataset():
     from pilfm.fast_dataset import FastCylinderHFDataset
     from realpdebench.data.fluid_hf_dataset import CylinderHFDataset
@@ -150,6 +278,8 @@ if __name__ == "__main__":
     print("(b) sampler"); test_sampler()
     print("(c) initial loss"); test_initial_loss(data)
     print("(e) checkpoint round-trip"); test_roundtrip()
+    print("(g) target_clip / t_clip"); test_target_clip()
+    print("(h) training diagnostics"); test_diag()
     if data:
         print("(f) fast dataset equivalence"); test_fast_dataset()
     print("ALL PASSED")

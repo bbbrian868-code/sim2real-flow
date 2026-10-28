@@ -3,14 +3,25 @@ import torch
 import torch.nn.functional as F
 
 
-def fm_loss(model, y1, cond, y0=None, t=None):
+def fm_loss(model, y1, cond, y0=None, t=None, t_clip=None, per_sample=False):
     # y0 / t may be supplied by tests (e.g. the DDP equivalence check); otherwise drawn here
+    # t_clip: None = target y1 - y0 (original). A float = target (y1 - y_t) / max(1 - t, t_clip), the same clipped
+    # denominator as the x-pred model (build.target_t_clip); equal to y1 - y0 for t <= 1 - t_clip
+    # per_sample (dit_xpred_width Step 3 diagnostics): also return the detached per-sample loss and t; the returned
+    # loss is the same expression as without it
     y0 = torch.randn_like(y1) if y0 is None else y0
     t = torch.rand(y1.shape[0], device=y1.device) if t is None else t
     tt = t.view(-1, 1, 1, 1)
     yt = (1 - tt) * y0 + tt * y1
     v = model(yt, t, cond)
-    return F.mse_loss(v.float(), (y1 - y0).float())
+    if t_clip is None:
+        target = (y1 - y0).float()
+    else:
+        target = (y1.float() - yt.float()) / (1 - tt.float()).clamp(min=t_clip)
+    loss = F.mse_loss(v.float(), target)
+    if not per_sample:
+        return loss
+    return loss, (v.detach().float() - target).pow(2).mean(dim=(1, 2, 3)), t
 
 
 @torch.no_grad()
