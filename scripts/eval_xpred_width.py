@@ -28,11 +28,14 @@ Writes DIR/bench_<name>.json.
 
 pcfm_xpred (docs/pcfm_xpred, DECISIONS P21): --sampler interp | pcfm | final_only replaces the Euler sampler by a
 constrained sampler of fm/constrained.py (constraint C2, per-frame div_rel equal to the div_rel of the sample's last input
-frame, P19; eval needs --omega and N_ar = 1). Each batch's per-sample target and Ω / grid spacing are computed from the
+frame, P19; eval needs --omega). Each batch's per-sample target and Ω / grid spacing are computed from the
 physical input before its draws. The JSON gains sampler, sampler_kw, sampler_diagnostics (final Newton iterations,
 non-converged count, per-step ||h||) and constraint_residual (||h|| over the 20 frames, from the evaluation's own
 div_rel, for target / single / kmean); per-sample residuals go to <json>_per_sample.npz. --constraint-residual adds the
 residual to an Euler run. bench with a constrained sampler times one call at B = 1 and 64 on the first test inputs.
+N_ar > 1 (P24, P25): the target stays the one of the real input in every round (it is not recomputed from the fed-back
+prediction); divergence and constraint_residual then cover all N_ar x 20 frames, with per-round medians (the residual
+norm is taken over each round's 20 frames), and the per-sample npz holds (samples, rounds) residual norms.
 Output names: <run>_nar<N>_<sampler><steps>_K<K>.json (euler: unchanged). The default (--sampler euler, no
 --constraint-residual) is the original code path.
 """
@@ -184,10 +187,8 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
     n = npix_r = 0
     c = None
     track = hasattr(draw, "set_batch")  # pcfm_xpred: per-sample target / ctx for the constrained samplers (make_draw)
-    if track:
+    if track:  # the per-sample target is set once per batch from the real input and held for all N_ar rounds (P25)
         draw.set_normalizer(norm)
-        if n_ar != 1:
-            raise ValueError("constrained samplers / constraint residual: N_ar = 1 only")
     taus = []
     for bi, (x, y) in enumerate(loader):
         b = x.size(0)
@@ -227,7 +228,7 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
                 var_r[r] += var[:, sl].sum().item(); std_r[r] += var[:, sl].sqrt().sum().item()
         npix_r += yc[:, :T_OUT].numel()
         n += b
-        if geo is not None and n_ar == 1:
+        if geo is not None and (n_ar == 1 or track):  # N_ar > 1: only with the constraint residual (pcfm_xpred)
             for i, s in enumerate(sids):
                 om, dx, dy = geo[s]
                 for t, F in (("target", yc[i]), ("single", S[0, i]), ("kmean", km[i])):
@@ -269,17 +270,25 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
                 "median_of_traj_medians": float(np.median([np.median(v[fs == s]) for s in np.unique(fs)])),
                 "q25": float(np.quantile(v, 0.25)), "q75": float(np.quantile(v, 0.75))} for t, v in d.items()}
         res["divergence"]["n_frames"] = int(len(fs)); res["divergence"]["n_traj"] = int(len(np.unique(fs)))
+        if n_ar > 1:
+            for t, v in d.items():
+                res["divergence"][t]["per_round_median"] = np.median(v.reshape(-1, n_ar, T_OUT), axis=(0, 2)).tolist()
         if track:  # residual of C2 from the evaluation's own div_rel (float64 on the fp32 physical prediction)
             tau = torch.cat(taus).numpy()
-            per = {t: (v.reshape(-1, T_OUT) - tau[:, None]) for t, v in d.items()}
+            # (samples, rounds, 20 frames); N_ar > 1: the target of every round is tau of the real input (P25)
+            per = {t: (v.reshape(-1, n_ar, T_OUT) - tau[:, None, None]) for t, v in d.items()}
             qs = lambda v: {"median": float(np.median(v)), "q25": float(np.quantile(v, .25)), "q75": float(np.quantile(v, .75)),
                             "q99": float(np.quantile(v, .99)), "max": float(v.max()), "mean": float(v.mean())}
+            hn = {t: np.linalg.norm(h, axis=2) for t, h in per.items()}  # (samples, rounds)
             res["constraint_residual"] = {
                 "definition": "h = div_rel(frame) - tau, tau = div_rel of the sample's last input frame (P19); "
-                              "norm = ||h||_2 over the 20 frames of a sample",
-                "tau": qs(tau), **{t: {"norm": qs(np.linalg.norm(h, axis=1)), "max_abs_frame": qs(np.abs(h).max(1))}
+                              "norm = ||h||_2 over the 20 frames of a sample (N_ar > 1: of each round, all rounds pooled)",
+                "tau": qs(tau), **{t: {"norm": qs(hn[t].ravel()), "max_abs_frame": qs(np.abs(h).max(2).ravel()),
+                                       **({"per_round_norm_median": np.median(hn[t], 0).tolist(),
+                                           "per_round_norm_q99": np.quantile(hn[t], .99, axis=0).tolist()}
+                                          if n_ar > 1 else {})}
                                    for t, h in per.items()}}
-            res["_arrays"] = {"tau": tau, **{f"h_norm_{t}": np.linalg.norm(h, axis=1) for t, h in per.items()},
+            res["_arrays"] = {"tau": tau, **{f"h_norm_{t}": (v[:, 0] if n_ar == 1 else v) for t, v in hn.items()},
                               "sim_id": np.array(sim_ids[:n])}
     res["spectrum"] = spectra
     res.update(n_samples=n, channels_evaluated=int(c))
@@ -361,8 +370,8 @@ def main():
                     help="euler: also compute the C2 residual against the per-sample target (P19); always on otherwise")
     a = ap.parse_args()
     constrained = a.sampler != "euler"
-    if constrained and (not a.omega or (a.mode == "eval" and a.n_ar != [1]) or a.official):
-        sys.exit("constrained samplers need --omega; eval: --n-ar 1 only; bench: FM runs only (no --official)")
+    if (constrained or a.constraint_residual) and (not a.omega or a.official):
+        sys.exit("constrained samplers / --constraint-residual need --omega; bench: FM runs only (no --official)")
     skw = None
     if constrained:
         skw = dict(jac=a.jac)
