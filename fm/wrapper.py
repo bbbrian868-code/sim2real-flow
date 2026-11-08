@@ -25,18 +25,24 @@ class FMPredictor(nn.Module):
     The noise generator is seeded once; call reset() to replay the same noise sequence.
     """
 
-    def __init__(self, model, T_out, C_out, n_steps=20, n_samples=1, seed=0, solver="euler", objective="fm"):
+    def __init__(self, model, T_out, C_out, n_steps=20, n_samples=1, seed=0, solver="euler", objective="fm",
+                 sampler="euler", constraint=None, sampler_kw=None):
         super().__init__()
         self.model, self.T_out, self.C_out, self.solver = model, T_out, C_out, solver
         self.objective = objective  # todo_D: "mse" (one deterministic forward) or "edm" (EDMPrecond model)
         self.n_steps, self.n_samples, self.seed = n_steps, n_samples, seed
         self.gen = None
+        # pcfm_xpred: sampler "euler" (default) = the original path through fm.paths.sample, unchanged; "interp" / "pcfm" /
+        # "final_only" = fm.constrained.constrained_sample (x-pred FM only), constraint + per-batch ctx, extra arguments in
+        # sampler_kw; the diagnostics of the last draw are kept in last_info
+        self.sampler, self.constraint, self.sampler_kw = sampler, constraint, dict(sampler_kw or {})
+        self.last_info = None
 
     def reset(self):
         self.gen = None
 
     @torch.no_grad()
-    def forward(self, x):
+    def forward(self, x, ctx=None):
         cond = fold(x)
         if self.gen is None or self.gen.device != cond.device:
             self.gen = torch.Generator(device=cond.device).manual_seed(self.seed)
@@ -44,12 +50,20 @@ class FMPredictor(nn.Module):
         shape = (B, self.T_out * self.C_out, H, W)
         acc = torch.zeros(shape, device=cond.device)
         for _ in range(self.n_samples):
-            acc += self.draw(cond, shape).float()
+            acc += self.draw(cond, shape, ctx).float()
         return unfold(acc / self.n_samples, self.T_out, self.C_out)
 
     @torch.no_grad()
-    def draw(self, cond, shape):
+    def draw(self, cond, shape, ctx=None):
         """One sample (B, T*C, H, W) in normalized space."""
+        if self.sampler != "euler":
+            if self.objective != "fm" or self.solver != "euler":
+                raise ValueError("constrained samplers need objective 'fm' with the Euler grid")
+            from fm.constrained import constrained_sample
+            y, self.last_info = constrained_sample(self.model, cond, shape, self.n_steps, self.constraint, ctx,
+                                                   mode=self.sampler, generator=self.gen, return_info=True,
+                                                   **self.sampler_kw)
+            return y
         if self.objective == "mse":
             return objectives.mse_predict(self.model, cond, shape)
         if self.objective == "edm":
