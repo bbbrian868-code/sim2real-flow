@@ -1,7 +1,7 @@
 # 決策紀錄：在 x-pred FM 上實作 PCFM（推論期硬約束取樣）
 
-任務：`docs/pcfm_xpred/TASK_2026-11-08_pcfm-xpred.md`；結果：`/work/b314513067/pi-lfm/results/fm/2026-11-08_pcfm-xpred/`。
-本檔只記錄這個實驗的決策；`dit_xpred_width` 的決策在根目錄 `DECISIONS.md`（D1–D39），本 repo 更早的決策在 `docs/DECISIONS.md`。
+任務：`docs/pcfm_xpred/TASK_2026-11-08_pcfm-xpred.md`；結果總整：`docs/pcfm_xpred/RESULTS_2026-11-09_pcfm-xpred.md`；結果檔：`/work/b314513067/pi-lfm/results/fm/2026-11-08_pcfm-xpred/`。
+本檔只記錄這個實驗的決策；`dit_xpred_width` 的決策在 `docs/dit_xpred_width/DECISIONS.md`（D1–D39），本 repo 更早的決策在 `docs/DECISIONS.md`。
 
 每筆的格式：編號、日期、步驟、決定、理由。理由欄空白表示使用者偏好。推翻時新增一筆，並在決定欄註明取代的編號。
 

@@ -1,6 +1,6 @@
 # DiT 預測目標（x vs v）× 模型寬度：結果總整
 
-日期：2026-10-28。任務：[TASK_2026-10-26_dit-xpred-width.md](TASK_2026-10-26_dit-xpred-width.md)。決策紀錄：[../../DECISIONS.md](../../DECISIONS.md)（D1–D39）。
+日期：2026-10-28。任務：[TASK_2026-10-26_dit-xpred-width.md](TASK_2026-10-26_dit-xpred-width.md)。決策紀錄：[DECISIONS.md](DECISIONS.md)（D1–D39）。
 
 本文件只整理數字與觀察到的現象，不下研究結論。
 

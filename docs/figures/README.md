@@ -7,5 +7,7 @@ Snapshots of the figures used in the reports (copied from the results directory,
 | `phase4/phase4_val_curves.png` | `v2.0.1/phase4_val_curves.png` | `scripts/plot_phase4_curves.py` |
 | `phase4/val_curves_summary.png` | `v2.0.1/val_curves_summary.png` | `scripts/plot_val_curves.py` |
 | `phase4/sim_trainloss_selection.png` | `v2.0.1/sim_trainloss_sel/curves.png` | `scripts/summarize_sim_trainloss_sel.py` |
+| `pcfm_xpred/s4_fig*.png` | `fm/2026-11-08_pcfm-xpred/S4_eval-test/summary/fig*.png` | `scripts/summarize_pcfm_xpred.py` |
+| `pcfm_xpred/nar10_fig*.png` | `fm/2026-11-08_pcfm-xpred/S5_rollout10-test/summary/fig*.png` | `scripts/summarize_pcfm_xpred_nar10.py` |
 
 After regenerating a figure, copy it here again.

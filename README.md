@@ -7,6 +7,7 @@ Current contents:
 - **RealPDEBench 2.0.1 migration**: remote/local diff of the dataset, split and integrity checks, re-evaluation of the 2.0.0 checkpoints.
 - **Baselines**: U-Net, DeepONet and Transolver retrained on 2.0.1 (numerical / real / finetune), evaluated through a mirror of the official evaluation loop.
 - **Basic flow matching**: rectified flow (linear path, Gaussian source, Euler sampler) with U-Net and DiT backbones in three sizes; Phase 6 results, ablations (Euler steps N, number of samples K, sim noise on the condition only), training/eval curves and field visualizations.
+- **Later experiments**: DiT prediction target (x vs v) × width, checks of the real PIV data, and inference-time hard constraints (PCFM) on the x-pred model; see [Experiments](#experiments).
 
 Code only: no data, checkpoints or result files are tracked (see `.gitignore`).
 
@@ -21,7 +22,20 @@ Code only: no data, checkpoints or result files are tracked (see `.gitignore`).
 | `slurm/` | job scripts for the NCHC Nano4 cluster |
 | `jobs/` | job lists and submission queues |
 | `patches/` | local modification of the official package, as a diff |
-| `docs/` | task reports (`reports/step_*.md`), `DECISIONS.md` (every non-obvious choice, with reasons), consolidated Phase 0-4 report |
+| `docs/` | Phase 0-6 task reports (`reports/step_*.md`), `DECISIONS.md` (repo-wide decisions D-001 on, with reasons), consolidated Phase 0-4 report; one folder per later experiment (task, decisions, results); `figures/` holds snapshots of the figures used in the reports |
+
+## Experiments
+
+Each later experiment has its own folder under `docs/` with the task (`TASK_*.md`), the decision log (`DECISIONS.md`) and the results (`RESULTS_*.md` / `REPORT_*.md`). Result files are not tracked; their location is given in each results document.
+
+| Experiment | Dates | Docs | Main code | Results directory (`/work/b314513067/pi-lfm/results/...`) |
+|---|---|---|---|---|
+| Phase 0-6: 2.0.1 migration, baselines, basic flow matching | until 2026-10 | `docs/reports/`, `docs/REPORT_phase0-4_baselines_v2.0.1.md`, `docs/DECISIONS.md` | `fm/`, `pilfm/`, `scripts/eval_*.py`, `scripts/summarize_*.py` | `v2.0.1/`, `fm/phase6*/` |
+| DiT x-pred vs v-pred × width | 2026-10-26 – 10-28 | `docs/dit_xpred_width/` | `fm/configs/cylinder/xpred_width/`, `scripts/*xpred_width*.py` | `fm/2026-10-26_dit-xpred-width/` |
+| Real PIV data checks | 2026-10-29 | `docs/realdata/` | `scripts/realdata_checks.py` | `realdata/` |
+| PCFM hard constraints on the x-pred model | 2026-11-08 – 11-09 | `docs/pcfm_xpred/` | `fm/constrained.py`, `scripts/pcfm_xpred_*.py`, `scripts/eval_xpred_width.py --sampler`, `scripts/summarize_pcfm_xpred*.py` | `fm/2026-11-08_pcfm-xpred/` |
+
+Scripts stay flat in `scripts/`: job scripts and code snapshots in the results directories refer to these paths, and some scripts import each other.
 
 ## Setup
 

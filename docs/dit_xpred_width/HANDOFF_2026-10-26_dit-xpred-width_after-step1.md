@@ -3,7 +3,7 @@
 暫停原因：使用者要先處理其他投稿的實驗。本檔記錄到暫停為止的狀態，下次從「接續步驟」開始。
 
 - 任務清單原文：[TASK_2026-10-26_dit-xpred-width.md](TASK_2026-10-26_dit-xpred-width.md)（全域規則仍適用：每步停下回報、正式訓練與推論要先同意、新功能以預設關閉的開關加入）
-- 決策紀錄：repo 根目錄 [DECISIONS.md](../../DECISIONS.md)，D1–D21。**DECISIONS.md 以後的條目優先於任務清單原文。**
+- 決策紀錄：[DECISIONS.md](DECISIONS.md)（原在 repo 根目錄，2026-11-09 移到本資料夾），D1–D21。**DECISIONS.md 以後的條目優先於任務清單原文。**
 - 背景文件 `dit_xpred_plan.md`：在 `/work/b314513067` 下找不到。
 
 ## 1. 進度
@@ -92,7 +92,7 @@ Step 1 驗證結果（細節見 Step 1 回報）：
 
 ## 7. 接續步驟
 
-1. 開新的 Claude session 時說：「讀 `pi-lfm-code/docs/dit_xpred_width/HANDOFF_2026-10-26_dit-xpred-width_after-step1.md` 和 `pi-lfm-code/DECISIONS.md`，接續 DiT x-pred × width 實驗」。
+1. 開新的 Claude session 時說：「讀 `pi-lfm-code/docs/dit_xpred_width/HANDOFF_2026-10-26_dit-xpred-width_after-step1.md` 和 `pi-lfm-code/docs/dit_xpred_width/DECISIONS.md`，接續 DiT x-pred × width 實驗」。
 2. 先確認狀態沒有變：`cd /work/b314513067/pi-lfm-code && git status --short` 應該只有第 3 節列的檔案。
 3. 使用者回覆「繼續」後做 **Step 2**：
    - 建 8 個 config（patch 4、QK-norm、target_clip，見第 2 節），只建檔、不訓練。

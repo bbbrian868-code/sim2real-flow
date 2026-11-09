@@ -2,6 +2,7 @@
 
 任務：`docs/dit_xpred_width/TASK_2026-10-26_dit-xpred-width.md`；結果：`docs/dit_xpred_width/RESULTS_2026-10-28_dit-xpred-width.md`。
 本檔只記錄這個實驗的決策；本 repo 先前各階段的決策在 `docs/DECISIONS.md`（D-001 起，編號格式不同）。
+本檔原在 repo 根目錄，2026-11-09 移到 `docs/dit_xpred_width/`；任務檔中「根目錄 `DECISIONS.md`」指的就是本檔。
 
 每筆的格式：編號、日期、步驟、決定、理由。理由欄空白表示使用者偏好。推翻時新增一筆，並在決定欄註明取代的編號。
 
