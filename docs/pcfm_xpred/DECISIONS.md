@@ -33,3 +33,6 @@
 | P24 | 11-09 | Step 4 的 STOP | 加跑 10 輪自回歸 rollout：A1–A3 在 real test 上跑 N_ar = 10、K = 1、noise seed 1234（同 S6 的 A0 設定）；A0 先在前 128 筆 test 上確認新程式重現原程式，再沿用 S6 的完整結果；A0 的約束殘差只在這 128 筆上算 |  |
 | P25 | 11-09 | Step 4 的 STOP | 10 輪 rollout 中每一輪的目標值都沿用該樣本真實輸入最後一幀的 div_rel（第 2–10 輪不以回饋的預測幀重算） |  |
 | P26 | 11-09 | Step 4 的 STOP | 檢查評估重算殘差與取樣器內部殘差的差距：在前 64 筆 val 上，把同一份輸出依序加上 fp64/fp32 計算、反正規化、官方迴圈的正規化往返，逐項量殘差（`S5_residual-gap-val/`） |  |
+| P27 | 11-16 | 延伸：sim 訓練模型 | 加做 sim-to-real：用 R6 的同一份 config（`R6_xpred_w512.yaml`），只把訓練資料改成 numerical（`--train-data-type numerical`，seed 0，50k 步，H100），訓練一個 x-pred 模型 R6num；在 real test 上跑 A0–A3，N_ar = 1、K = 8、noise seed 1234，其餘同 P20–P23。只跑 1 個 seed，不做 finetune，不做 N_ar = 10 | 只用 real 訓練的模型測不到 sim-to-real。模擬資料的 div_rel 約 0.12，real 約 0.68；模擬訓練的模型可能輸出散度偏低的流場，約束的目標值來自 real 輸入，可能有落差可以修正。R6 上約束沒有幫助，可能是因為模型已經學到 real 的統計。先用 1 個 seed 看趨勢，成本約 3 GPU-h |
+| P28 | 11-16 | 延伸：sim 訓練模型 | R6num 的 checkpoint 選點沿用 `train_fm.py` 的做法：每 2000 步在 536 筆 real val 子集上算 RMSE，取最低的 `best.pt`；`last.pt` 也保留 | 與 R6、Phase 6 的 numerical 列及官方流程相同，可以直接比較。D-031 指出：模擬訓練用 real val 選點會用到 real 資料，得到的是上限，結果中需註明 |
+| P29 | 11-16 | 延伸：sim 訓練模型 | 建立 numerical cache（`scripts/build_cache.py --type numerical` → `pi-lfm/cache/v2.0.1/numerical`），以單元測試 (f) 驗證和官方 loader 逐位元相同；不寫入 clft_data | config 的 `cache_dir` 需要它，D20 當時只重建了 real cache；驗證方式和 real cache 相同 |

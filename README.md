@@ -33,7 +33,7 @@ Each later experiment has its own folder under `docs/` with the task (`TASK_*.md
 | Phase 0-6: 2.0.1 migration, baselines, basic flow matching | until 2026-10 | `docs/reports/`, `docs/REPORT_phase0-4_baselines_v2.0.1.md`, `docs/DECISIONS.md` | `fm/`, `pilfm/`, `scripts/eval_*.py`, `scripts/summarize_*.py` | `v2.0.1/`, `fm/phase6*/` |
 | DiT x-pred vs v-pred × width | 2026-10-26 – 10-28 | `docs/dit_xpred_width/` | `fm/configs/cylinder/xpred_width/`, `scripts/*xpred_width*.py` | `fm/2026-10-26_dit-xpred-width/` |
 | Real PIV data checks | 2026-10-29 | `docs/realdata/` | `scripts/realdata_checks.py` | `realdata/` |
-| PCFM hard constraints on the x-pred model | 2026-11-08 – 11-09 | `docs/pcfm_xpred/` | `fm/constrained.py`, `scripts/pcfm_xpred_*.py`, `scripts/eval_xpred_width.py --sampler`, `scripts/summarize_pcfm_xpred*.py` | `fm/2026-11-08_pcfm-xpred/` |
+| PCFM hard constraints on the x-pred model | 2026-11-08 – 11-16 (incl. a numerical-trained model) | `docs/pcfm_xpred/` | `fm/constrained.py`, `scripts/pcfm_xpred_*.py`, `scripts/eval_xpred_width.py --sampler`, `scripts/summarize_pcfm_xpred*.py` | `fm/2026-11-08_pcfm-xpred/` |
 
 Scripts stay flat in `scripts/`: job scripts and code snapshots in the results directories refer to these paths, and some scripts import each other.
 

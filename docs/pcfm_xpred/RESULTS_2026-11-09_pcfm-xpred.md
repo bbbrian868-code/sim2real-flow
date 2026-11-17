@@ -1,10 +1,10 @@
 # PCFM 推論期硬約束取樣（x-pred FM）：結果總整
 
-日期：2026-11-09。任務：[TASK_2026-11-08_pcfm-xpred.md](TASK_2026-11-08_pcfm-xpred.md)。決策紀錄：[DECISIONS.md](DECISIONS.md)（P1–P26）。
+日期：2026-11-09。任務：[TASK_2026-11-08_pcfm-xpred.md](TASK_2026-11-08_pcfm-xpred.md)。決策紀錄：[DECISIONS.md](DECISIONS.md)（P1–P29）。
 
 本文件只整理數字與觀察到的現象，不下研究結論。
 
-狀態：Step 0–4 完成；Step 4 之後加做 10 輪 rollout（P24、P25）與殘差差距檢查（P26）。
+狀態：Step 0–4 完成；Step 4 之後加做 10 輪 rollout（P24、P25）與殘差差距檢查（P26）；2026-11-16 加做只用模擬資料訓練的模型（§7，P27–P29）。
 
 ---
 
@@ -19,7 +19,7 @@
 | 最終投影 | 以最後的狀態為錨的 Newton 投影，迭代到 ‖h‖₂ < 1e-5 或 20 次（P9、P17、P22）；20 次仍未達到記為未收斂 |
 | 噪聲 | 各取樣方式用同一個 generator、相同抽取順序，同一筆樣本的初始噪聲相同（P4）；test seed 1234（P12），val seed 0 |
 | 評估 | real test，官方評估流程，Euler 20 步，fp32；N_ar = 1：4827 筆、每筆 K = 8；N_ar = 10：4672 筆、K = 1（P20、P24） |
-| A0 數字 | 沿用 `dit_xpred_width` S6；先在前 128 筆 test 上確認新程式與原程式結果相同（§6） |
+| A0 數字 | 沿用 `dit_xpred_width` S6；先在前 128 筆 test 上確認新程式與原程式結果相同（§8） |
 
 ## 2. 目標值的選擇（Step 2，train / val）
 
@@ -121,29 +121,66 @@ A1–A3 三條線幾乎重疊；單一樣本在中高頻高於真值，K = 8 平
 ![](../figures/pcfm_xpred/nar10_fig2_per-round-residual.png)
 ![](../figures/pcfm_xpred/nar10_fig3_per-round-div-rel.png)
 
-## 7. 驗證
+## 7. 只用模擬資料訓練的模型（P27–P29，N_ar = 1，real test 4827 筆，K = 8）
+
+R6 只用 real 資料訓練，測不到 sim-to-real。這一節另外訓練 R6num：config 和 R6 相同，只把訓練資料改成 numerical（官方流程：輸入和目標都加 10% 乘性噪聲、壓力通道以 0.5 的機率遮蔽），seed 0，50k 步。checkpoint 和 R6 一樣，用 536 筆 real val 子集選點（P28）。評估設定與 §4 完全相同（seed 1234、同一組噪聲），A0 也重新跑。
+
+**選出的 checkpoint 只訓練了 4000 步。** real val 的相對誤差在第 4000 步最低（0.199），之後一路上升，第 50k 步是 0.242；模擬資料上的訓練 loss 則持續下降。這與 Phase 6 的 numerical 模型相同（模擬訓練越久，在 real 上越差）。用 real val 選點用到了 real 資料，所以下面的數字是「只用模擬訓練」的上限。
+
+| | 相對誤差 單一樣本 | 相對誤差 K=8 平均 | RMSE 單一樣本 | R² 單一樣本 | CRPS | 樣本間離散度 |
+|---|---|---|---|---|---|---|
+| A0 | **0.203** | **0.194** | 0.0358 | 0.660 | 0.0154 | 0.0082 |
+| A1 | 0.214 | 0.202 | 0.0377 | 0.622 | 0.0157 | 0.0099 |
+| A2 | 0.214 | 0.201 | 0.0376 | 0.624 | 0.0157 | 0.0100 |
+| A3 | 0.214 | 0.201 | 0.0377 | 0.623 | 0.0157 | 0.0100 |
+| 參考：R6 A0 | 0.0785 | 0.0625 | 0.0153 | 0.938 | 0.00347 | 0.0050 |
+| 參考：直接複製最後一幀 | 0.181 | | 0.0364 | 0.648 | | |
+
+| | div_rel 中位數 單一樣本 | div_rel 中位數 K=8 平均 | 殘差中位數 單一樣本 | 殘差中位數 K=8 平均 |
+|---|---|---|---|---|
+| A0 | 0.702 | 0.703 | 0.118 | 0.125 |
+| A1 | 0.704 | 0.703 | 0.119 | 0.123 |
+| A2 | 0.681 | 0.683 | 1.0e-5 | 0.024 |
+| A3 | 0.681 | 0.685 | 1.4e-5 | 0.029 |
+| 真值 | 0.681 | | 0.0477 | |
+
+- 不加約束時，R6num 的相對誤差 0.203，比直接複製最後一幀（0.181）差，與 Phase 6 的 numerical FM（0.195–0.217）一致。
+- R6num 輸出的 div_rel 並不低：中位數 0.702，比目標值 0.681 略高，與模擬資料本身的 0.12 差很遠。可能的原因（未驗證）是訓練目標帶有 10% 乘性噪聲。因此約束只需要做小幅修正。
+- 三種新取樣方式彼此幾乎相同，都比 A0 差約 0.011（R6 上差約 0.057）。
+- 和 R6 不同的是，8 個樣本平均後 A2、A3 仍接近約束（殘差 0.024–0.029，R6 是 0.15–0.18），因為 R6num 的樣本間差異較小。
+- 這裡的殘差（約 1e-5）比 §4.2 的約 1e-4 小。評估迴圈的正規化往返仍然存在（§5），但沒有再查證殘差變小的原因。
+- 最終投影：A2 的 38,616 次取樣全部 1 次迭代收斂；A3 以 2–4 次為主，有 17 次（0.04%）達到 20 次上限，最終殘差最大 8.8e-4，依 P18 照實記錄，沒有 NaN。
+- 其他單一樣本指標：高頻相對誤差 A0 0.912、A1–A3 約 0.963；頻率誤差 151 vs 約 160。
+- 整份 test 評估時間：A0 835 s、A1 807 s、A2 1396 s、A3 1099 s。
+
+完整數字在 [pcfm_xpred_sim-trained.csv](pcfm_xpred_sim-trained.csv)（含 R6 的對照列），val 曲線在 [pcfm_xpred_sim-trained_val-curve.csv](pcfm_xpred_sim-trained_val-curve.csv)。
+
+## 8. 驗證
 
 - 單元測試 `fm/tests/test_constrained.py`：投影、vmap、逐樣本目標（Step 1、Step 2）全部通過。
 - A0 重現（N_ar = 1，前 128 筆 test）：原程式、新程式預設、新程式加殘差計算三者所有欄位逐位元相同，只有能量譜最後一兩位數不同（最大相對差 3.8e-16，真值頻譜也一樣，來源是 GPU 累加順序）。
 - A0 重現（N_ar = 10，前 128 筆 test）：三者所有欄位完全相同（最大相對差 0）。
 - A2 的 10 輪路徑先在 64 筆 test 上試跑，每輪殘差正常、全部收斂。
+- numerical cache（§7）：單元測試 (f) 確認 cache 讀出的 numerical train 樣本（含遮蔽與加噪的亂數）和官方 loader 逐位元相同。
 
-## 8. 限制與注意事項
+## 9. 限制與注意事項
 
-- 只用一個模型（R6）、一個噪聲種子（1234），只做 C2 一種約束。
+- 主要結果只用一個模型（R6）、一個噪聲種子（1234），只做 C2 一種約束；模擬訓練的 R6num 只有 1 個訓練 seed，只做 N_ar = 1，沒有做 sim 預訓練 + real 微調。
+- R6num 的 checkpoint 用 real val 選出（P28），代表上限；只訓練 4000 步的點被選中。
 - A0 的約束殘差與 10 輪的 div_rel 只在前 128 筆 test 上計算。
 - 新取樣方式的誤差增加幾乎都來自「以初始噪聲退回」本身（A1 與 A2、A3 幾乎相同）；Euler 等價於以當前狀態反推的噪聲退回。未測試反推噪聲的變體（P23）。
 - 評估重算的殘差約 1e-4 由官方評估迴圈造成（§5），不是取樣器的精度。
 
-## 9. 算力
+## 10. 算力
 
 | 項目 | GPU-h（H100） |
 |---|---|
 | Step 0–3（探查、單元測試、目標值統計、試跑） | 約 0.08 |
 | Step 4（重現檢查 + A1–A3 評估） | 約 0.96 |
 | 10 輪 rollout 與殘差差距檢查 | 約 1.54 |
+| 模擬訓練的模型（cache + 單元測試 0.05、訓練 1.63、A0–A3 評估 1.15） | 約 2.83 |
 
-## 10. 檔案位置
+## 11. 檔案位置
 
 結果根目錄：`/work/b314513067/pi-lfm/results/fm/2026-11-08_pcfm-xpred/`
 
@@ -156,5 +193,6 @@ A1–A3 三條線幾乎重疊；單一樣本在中高頻高於真值，K = 8 平
 | `S4_eval-test/` | `eval/`、`bench/`、`repro/`（A0 重現）、`summary/`（CSV、圖）、送出時的程式碼狀態 |
 | `S5_residual-gap-val/` | 殘差差距檢查（`residual_gap.json`、`residual_gap_verdict.md`） |
 | `S5_rollout10-test/` | 10 輪 rollout 的 `eval/`、`repro/`、`smoke/`、`summary/` |
+| `S6_sim-trained-model/` | 模擬訓練的模型：`cache-build/`（numerical cache 與單元測試）、`train-50k/R6num_xpred_w512/`（checkpoint、log）、`eval/`、`summary/`（`summarize_s6.py`、CSV）、送出時的程式碼狀態 |
 
 程式：`fm/constrained.py`（約束與取樣器）、`fm/wrapper.py`（`FMPredictor` 的取樣器開關）、`fm/tests/test_constrained.py`；`scripts/pcfm_xpred_div_stats.py`（Step 2）、`scripts/pcfm_xpred_smoke.py`（Step 3）、`scripts/eval_xpred_width.py --sampler`（Step 4、10 輪）、`scripts/pcfm_xpred_residual_gap.py`（§5）、`scripts/summarize_pcfm_xpred.py`、`scripts/summarize_pcfm_xpred_nar10.py`（CSV、圖）。
