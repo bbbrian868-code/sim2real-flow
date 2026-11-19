@@ -12,6 +12,13 @@ euler_sample). y0 is drawn exactly as euler_sample draws it (one torch.randn(sha
 for every retreat (P4). The network is called once per step (NFE = N), never at t = 1, always under no_grad; only the
 constraint is differentiated (P1, P2: x-pred models only).
 
+Retreat (retreat=, DECISIONS P30): 'init' (default, P4) retreats with the initial noise y0 as above; 'implied' retreats with
+the noise implied by the current state and the raw network output x_raw (before any projection):
+    y0_hat = (y_t - t x_raw) / (1 - t),   y_{t_k+1} = (1 - t_k+1) y0_hat + t_k+1 x
+With x = x_raw (interp) this is algebraically the Euler step y_t + dt (x_raw - y_t) / (1 - t), i.e. A0 (no clipping while
+1 - t >= t_floor, checked); pcfm then takes the Euler step toward the projected x; final_only is the plain Euler sample
+followed by the final projection. At t = 0, y0_hat = y0.
+
 Projection (gn_project), per sample, with J = dh/du at the current iterate u^(j) and anchor a:
     u^(j+1) = a - J^T (J J^T + eps I)^-1 ( h(u^(j)) + J (a - u^(j)) )
 With u^(0) = a this is the Gauss-Newton tangent projection a - J^T (J J^T + eps I)^-1 h(a) (PCFM Eq. 4); iterating it is the
@@ -234,8 +241,8 @@ MODES = ("interp", "pcfm", "final_only")
 @torch.no_grad()
 def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, generator=None, newton_tol=None,
                        newton_max_iter=None, n_mix=1, resample=None, eps=1e-6, final_eps=0.0, relaxed=None,
-                       jac="jacrev", return_info=False):
-    """A1 / A2 / A3 sampler (module docstring). model: XPredVelocity (P2). relaxed: None (off, P3) or a dict overriding
+                       jac="jacrev", retreat="init", return_info=False):
+    """A1 / A2 / A3 sampler (module docstring). retreat: 'init' (initial noise, P4) or 'implied' (P30). model: XPredVelocity (P2). relaxed: None (off, P3) or a dict overriding
     RELAXED_DEFAULTS (pcfm mode only). newton_tol / newton_max_iter: final projection of pcfm and final_only.
     n_mix / resample are ECI parameters and must keep their defaults (ECI not implemented, P11).
     info (return_info): h_pre / h_post (n_steps, B) ||h||_2 of x before / after the per-step projection (pcfm; interp and
@@ -250,6 +257,12 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
         raise ValueError("n_mix / resample are ECI-only (not implemented, P11)")
     if relaxed is not None and mode != "pcfm":
         raise ValueError("relaxed correction is only defined for mode='pcfm'")
+    if retreat not in ("init", "implied"):
+        raise ValueError(retreat)
+    if retreat == "implied" and relaxed is not None:
+        raise ValueError("relaxed correction is defined with the initial-noise retreat only")
+    if retreat == "implied" and 1.0 / n_steps < model.t_floor - 1e-12:
+        raise ValueError("implied retreat: 1 - t falls below t_floor on this grid (the Euler equivalence would break)")
     if mode in ("pcfm", "final_only") and (newton_tol is None or newton_max_iter is None):
         raise ValueError("pcfm / final_only need newton_tol and newton_max_iter")
     need_h = constraint is not None and (mode != "interp" or return_info)
@@ -274,6 +287,8 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
         if rk is not None:
             v = (x_raw - y) / (1 - t).clamp(min=model.t_floor).view(-1, 1, 1, 1)
             y = relaxed_correction(y0, x, v, t_next, constraint, ctx, **rk)
+        elif retreat == "implied":
+            y = (1 - t_next) * ((y - (i * dt) * x_raw) / (1 - i * dt)) + t_next * x
         else:
             y = (1 - t_next) * y0 + t_next * x
     info = {"h_pre": torch.stack(h_pre) if h_pre else None, "h_post": torch.stack(h_post) if h_post else None}

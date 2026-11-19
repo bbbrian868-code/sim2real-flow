@@ -366,6 +366,9 @@ def main():
     ap.add_argument("--newton-max-iter", type=int, default=20, help="constrained samplers: final projection (P17)")
     ap.add_argument("--pcfm-eps", type=float, default=1e-6, help="pcfm: per-step Tikhonov eps (P9, P16)")
     ap.add_argument("--jac", default="jacrev", choices=["jacrev", "vjp"])
+    ap.add_argument("--retreat", default="init", choices=["init", "implied"],
+                    help="constrained samplers: retreat with the initial noise (P4) or with the noise implied by the "
+                         "current state (P30); 'implied' adds '-implied' to the sampler tag in the output name")
     ap.add_argument("--constraint-residual", action="store_true",
                     help="euler: also compute the C2 residual against the per-sample target (P19); always on otherwise")
     a = ap.parse_args()
@@ -379,6 +382,11 @@ def main():
             skw.update(newton_tol=a.newton_tol, newton_max_iter=a.newton_max_iter, final_eps=0.0)
         if a.sampler == "pcfm":
             skw.update(eps=a.pcfm_eps)
+        if a.retreat != "init":
+            skw.update(retreat=a.retreat)
+    elif a.retreat != "init":
+        sys.exit("--retreat needs a constrained sampler")
+    tag = a.sampler + ("-implied" if a.retreat == "implied" else "")
     if not torch.cuda.is_available():
         sys.exit("CUDA not available")
     from pilfm import meta
@@ -417,7 +425,7 @@ def main():
                         rec[f"call_b{B}_newton_iters_per_call"] = sorted({int(l["newton_iters"].max()) for l in draw.log})
                     draw.log.clear()
                 rec.update(gpu=torch.cuda.get_device_name(0), precision="fp32", torch=torch.__version__)
-                json.dump(rec, open(os.path.join(a.out_dir, f"bench_{name}_{a.sampler}.json"), "w"), indent=1)
+                json.dump(rec, open(os.path.join(a.out_dir, f"bench_{name}_{tag}.json"), "w"), indent=1)
                 print(json.dumps(rec), flush=True)
                 del model, draw; torch.cuda.empty_cache()
             return
@@ -463,7 +471,7 @@ def main():
             spec = Spectrum(64, 128, dxm, dym, device)
         for run in a.run:
             name = os.path.basename(run.rstrip("/"))
-            out = os.path.join(a.out_dir, f"{name}_nar{n_ar}_{a.sampler}{a.steps}_K{a.K}.json")
+            out = os.path.join(a.out_dir, f"{name}_nar{n_ar}_{tag}{a.steps}_K{a.K}.json")
             if os.path.exists(out):
                 continue
             model, objective, st, rm = load_run(run, a.ckpt, device)
@@ -478,7 +486,7 @@ def main():
                    "meta": meta.collect(data_root=a.data_root, config=rm["config"], seed=rm["seed"],
                                         checkpoint=os.path.join(run, a.ckpt), weights="ema")}
             if constrained:
-                rec["sampler"], rec["sampler_kw"] = a.sampler, skw
+                rec["sampler"], rec["sampler_kw"], rec["retreat"] = a.sampler, skw, a.retreat
                 rec["sampler_diagnostics"] = summarize_log(draw.log, a.newton_tol)
             if arrays is not None:
                 np.savez(out[:-5] + "_per_sample.npz", **arrays)

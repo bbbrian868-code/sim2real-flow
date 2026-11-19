@@ -1,7 +1,11 @@
 """pcfm_xpred N_ar = 10 summary (DECISIONS P24, P25): CSV and figures from scripts/eval_xpred_width.py outputs.
 
   python scripts/summarize_pcfm_xpred_nar10.py --a0-eval S6/eval/R6_xpred_w512_nar10_euler20_K1.json \
-      --eval-dir S5/eval --repro S5/repro/repro_check.json --out S5/summary
+      --eval-dir S5/eval --repro S5/repro/repro_check.json --out S5/summary [--implied-eval-dir S8/eval]
+
+--implied-eval-dir (DECISIONS P31): also read the implied-noise-retreat runs (*_nar10_{pcfm,final_only}-implied20_K1.json),
+drawn in the colour of their initial-noise counterpart with dashed lines and open markers; the CSV is then named
+pcfm_xpred_nar10_with-implied.csv.
 
 A0 (Euler) = the dit_xpred_width S6 N_ar = 10 result of R6 (K = 1, seed 1234; reused after the 128-sample reproduction
 check); its div_rel and constraint residual exist only for the first 128 test samples (repro run with
@@ -40,12 +44,19 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("a0-eval", "eval-dir", "repro", "out"):
         ap.add_argument(f"--{k}", required=True)
+    ap.add_argument("--implied-eval-dir", default=None)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    samplers = [(s, lab, col, "-") for s, lab, col in SAMPLERS]
+    src = {s: a.eval_dir for s, _, _ in SAMPLERS[1:]}
+    if a.implied_eval_dir:
+        samplers += [("pcfm-implied", "A2' PCFM, implied-noise retreat", "#1baf7a", "--"),
+                     ("final_only-implied", "A3' end only, implied-noise retreat", "#eda100", "--")]
+        src.update({"pcfm-implied": a.implied_eval_dir, "final_only-implied": a.implied_eval_dir})
     E = {"euler": json.load(open(a.a0_eval))}
     H = {}
-    for s, _, _ in SAMPLERS[1:]:
-        f = glob.glob(os.path.join(a.eval_dir, f"*_nar10_{s}20_K1.json"))[0]
+    for s, _, _, _ in samplers[1:]:
+        f = glob.glob(os.path.join(src[s], f"*_nar10_{s}20_K1.json"))[0]
         E[s] = json.load(open(f))
         H[s] = np.load(f[:-5] + "_per_sample.npz")
     rep = json.load(open(a.repro))
@@ -58,7 +69,7 @@ def main():
     r = np.arange(1, N_AR + 1)
 
     rows = []
-    for s, lab, _ in SAMPLERS:
+    for s, lab, _, _ in samplers:
         e = E[s]
         cr = e["constraint_residual"]["single"] if s != "euler" else a0cr["single"]
         dv = e["divergence"]["single"] if s != "euler" else a0dv["single"]
@@ -88,13 +99,13 @@ def main():
                  "div_rel_samples": E["interp"]["n_samples"],
                  **{f"div_rel_median_round{i + 1}": v for i, v in enumerate(tgt_dv["per_round_median"])}})
     keys = list(dict.fromkeys(k for row in rows for k in row))
-    with open(os.path.join(a.out, "pcfm_xpred_nar10.csv"), "w", newline="") as fh:
+    with open(os.path.join(a.out, "pcfm_xpred_nar10_with-implied.csv" if a.implied_eval_dir else "pcfm_xpred_nar10.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, keys); w.writeheader(); w.writerows(rows)
 
     # fig1: per-round Rel L2
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    for s, lab, col in SAMPLERS:
-        ax.plot(r, E[s]["per_round"]["single"]["rel_l2"], color=col, lw=2, marker="o", ms=4, label=lab)
+    for s, lab, col, ls in samplers:
+        ax.plot(r, E[s]["per_round"]["single"]["rel_l2"], color=col, lw=2, ls=ls, marker="o", ms=4, mfc=col if ls == "-" else "white", label=lab)
     style(ax); ax.set_xlabel("rollout round (20 frames each)", color=INK, fontsize=9)
     ax.set_ylabel("Rel L2, one sample", color=INK, fontsize=9)
     ax.set_title(f"Rel L2 per round, real test (N_ar = 10, K = 1, {E['interp']['n_samples']} samples)",
@@ -105,13 +116,13 @@ def main():
     # fig2: per-round residual (log y)
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     ax.plot(r, tgt_cr["per_round_norm_median"], color=BASE, lw=2, label="real target vs tau")
-    for s, lab, col in SAMPLERS:
+    for s, lab, col, ls in samplers:
         if s == "euler":
             ax.plot(r, a0cr["single"]["per_round_norm_median"], color=col, lw=2, ls=":", marker="o", ms=4,
                     label=lab + " (first 128 samples)")
         else:
-            ax.plot(r, E[s]["constraint_residual"]["single"]["per_round_norm_median"], color=col, lw=2, marker="o",
-                    ms=4, label=lab)
+            ax.plot(r, E[s]["constraint_residual"]["single"]["per_round_norm_median"], color=col, lw=2, ls=ls, marker="o",
+                    ms=4, mfc=col if ls == "-" else "white", label=lab)
     style(ax); ax.set_yscale("log")
     ax.set_xlabel("rollout round", color=INK, fontsize=9)
     ax.set_ylabel("median ||div_rel - tau||_2 over the round's 20 frames", color=INK, fontsize=8)
@@ -124,19 +135,19 @@ def main():
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     ax.plot(r, tgt_dv["per_round_median"], color=BASE, lw=2, label="real target")
     ax.axhline(E["interp"]["constraint_residual"]["tau"]["median"], color=MUTED, lw=1, ls="--", label="tau (median)")
-    for s, lab, col in SAMPLERS:
+    for s, lab, col, ls in samplers:
         if s == "euler":
             ax.plot(r, a0dv["single"]["per_round_median"], color=col, lw=2, ls=":", marker="o", ms=4,
                     label=lab + " (first 128 samples)")
         else:
-            ax.plot(r, E[s]["divergence"]["single"]["per_round_median"], color=col, lw=2, marker="o", ms=4, label=lab)
+            ax.plot(r, E[s]["divergence"]["single"]["per_round_median"], color=col, lw=2, ls=ls, marker="o", ms=4, mfc=col if ls == "-" else "white", label=lab)
     style(ax); ax.set_xlabel("rollout round", color=INK, fontsize=9)
     ax.set_ylabel("median div_rel of the round's frames", color=INK, fontsize=9)
     ax.set_title("div_rel per round, one sample", color=INK, fontsize=10, loc="left")
     ax.legend(frameon=False, fontsize=7.5, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2)
     fig.tight_layout(); fig.savefig(os.path.join(a.out, "fig3_per-round-div-rel.png"), dpi=150); plt.close(fig)
 
-    json.dump({"rows": rows, "a0_source": a.a0_eval, "eval_dir": a.eval_dir, "repro": a.repro},
+    json.dump({"rows": rows, "a0_source": a.a0_eval, "eval_dir": a.eval_dir, "implied_eval_dir": a.implied_eval_dir, "repro": a.repro},
               open(os.path.join(a.out, "summary.json"), "w"), indent=1)
     print("\n".join(f"{row['sampler']}: rel_l2={row.get('single_rel_l2_error')} resid={row['residual_norm_median_all_rounds']}"
                     for row in rows))

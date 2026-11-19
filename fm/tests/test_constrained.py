@@ -13,6 +13,7 @@
     the relaxed correction
  mem jacrev vs vjp/jvp: peak memory and time of one projection of C2 at B = 64, n = 491520
  v8 per-sample target (Step 2, P19): ctx["tau"] == scalar tau when equal; per-sample targets reached; tau_last_input
+ v9 implied-noise retreat (P30): interp + implied == Euler; final_only + implied == projected Euler sample
 """
 import argparse, importlib.util, json, os, subprocess, sys, time, types
 
@@ -398,6 +399,50 @@ def v8():
     return out
 
 
+# ---------------------------------------------------------------------------------------------------------- v9
+def v9():
+    """Implied-noise retreat (P30), tiny random x-pred net, real VAL conditioning, C2 with per-sample targets:
+    interp + implied == euler_sample (same noise), final_only + implied == the final projection of the Euler sample,
+    pcfm + implied runs and meets the tolerance; pcfm init vs implied differ."""
+    from fm.paths import euler_sample
+    x, y, sids, norm = val_batch()
+    B = 4
+    m = tiny("x")
+    con = DivRelConstraint.from_normalizer(norm, None)
+    _, ctx = c2(norm, 0.68, sids[:B])
+    ctx["tau"] = torch.tensor([0.64, 0.66, 0.70, 0.72], device=dev)
+    cond = fold(x[:B])
+    shape = (B, T * C, H, W)
+    g = lambda: torch.Generator(device=dev).manual_seed(7)
+    kw = dict(newton_tol=1e-5, newton_max_iter=20)
+    ref = euler_sample(m, cond, shape, 20, generator=g())
+    out = {}
+    yi = constrained_sample(m, cond, shape, 20, con, ctx, "interp", generator=g(), retreat="implied")
+    out["interp_implied_vs_euler_max_abs"] = float((yi - ref).abs().max())
+    out["interp_init_vs_euler_max_abs"] = float(
+        (constrained_sample(m, cond, shape, 20, con, ctx, "interp", generator=g()) - ref).abs().max())
+    yf, inf = constrained_sample(m, cond, shape, 20, con, ctx, "final_only", generator=g(), retreat="implied",
+                                 return_info=True, **kw)
+    pr = gn_project(yi, con, ctx, anchor=yi, iters=20, eps=0.0, tol=1e-5)
+    out["final_only_implied_vs_projected_euler_max_abs"] = float((yf - pr).abs().max())
+    out["final_only_implied_final_h"] = [float(v) for v in inf["newton_res"][-1]]
+    yp, inp = constrained_sample(m, cond, shape, 20, con, ctx, "pcfm", generator=g(), retreat="implied",
+                                 return_info=True, **kw)
+    out["pcfm_implied_final_h"] = [float(v) for v in inp["newton_res"][-1]]
+    out["pcfm_implied_newton_iters"] = [int(v) for v in inp["newton_iters"]]
+    y2 = constrained_sample(m, cond, shape, 20, con, ctx, "pcfm", generator=g(), **kw)
+    out["pcfm_implied_vs_init_rel_diff"] = float((yp - y2).norm() / y2.norm())
+    try:
+        constrained_sample(m, cond, shape, 20, con, ctx, "pcfm", generator=g(), retreat="implied", relaxed={}, **kw)
+        out["implied_with_relaxed_rejected"] = False
+    except ValueError:
+        out["implied_with_relaxed_rejected"] = True
+    out["pass"] = bool(out["interp_implied_vs_euler_max_abs"] < 1e-4
+                       and out["final_only_implied_vs_projected_euler_max_abs"] < 1e-4
+                       and max(out["pcfm_implied_final_h"]) < 1e-5 and out["implied_with_relaxed_rejected"])
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -406,7 +451,7 @@ def main():
     a = ap.parse_args()
     for name, f in (("v1_backward_compat", v1), ("v2_linear_equivalence", v2), ("v3_min_norm", v3),
                     ("v4_jacobian", v4), ("v5_div_rel_consistency", v5), ("v6_oracle", v6), ("mem_jacrev_vs_vjp", mem),
-                    ("v8_per_sample_tau", v8)):
+                    ("v8_per_sample_tau", v8), ("v9_implied_retreat", v9)):
         if a.only and not any(name.startswith(p) for p in a.only):
             continue
         run(name, f)
