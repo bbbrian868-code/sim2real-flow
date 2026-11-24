@@ -34,6 +34,7 @@ Each later experiment has its own folder under `docs/` with the task (`TASK_*.md
 | DiT x-pred vs v-pred × width | 2026-10-26 – 10-28 | `docs/dit_xpred_width/` | `fm/configs/cylinder/xpred_width/`, `scripts/*xpred_width*.py` | `fm/2026-10-26_dit-xpred-width/` |
 | Real PIV data checks | 2026-10-29 | `docs/realdata/` | `scripts/realdata_checks.py` | `realdata/` |
 | PCFM hard constraints on the x-pred model | 2026-11-08 – 11-16 (incl. a numerical-trained model) | `docs/pcfm_xpred/` | `fm/constrained.py`, `scripts/pcfm_xpred_*.py`, `scripts/eval_xpred_width.py --sampler`, `scripts/summarize_pcfm_xpred*.py` | `fm/2026-11-08_pcfm-xpred/` |
+| Leray projection (divergence-free) as a hard-constraint comparison | 2026-11-22 – 11-24 | `docs/leray_xpred/` | `fm/leray.py`, `scripts/leray_xpred_*.py`, `scripts/eval_xpred_width.py --constraint leray\|partial --geometry`, `scripts/summarize_leray_xpred*.py` | `fm/2026-11-22_leray-xpred/` |
 
 Scripts stay flat in `scripts/`: job scripts and code snapshots in the results directories refer to these paths, and some scripts import each other.
 

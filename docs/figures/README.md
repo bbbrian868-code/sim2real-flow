@@ -9,5 +9,7 @@ Snapshots of the figures used in the reports (copied from the results directory,
 | `phase4/sim_trainloss_selection.png` | `v2.0.1/sim_trainloss_sel/curves.png` | `scripts/summarize_sim_trainloss_sel.py` |
 | `pcfm_xpred/s4_fig*.png` | `fm/2026-11-08_pcfm-xpred/S4_eval-test/summary/fig*.png` | `scripts/summarize_pcfm_xpred.py` |
 | `pcfm_xpred/nar10_fig*.png` | `fm/2026-11-08_pcfm-xpred/S5_rollout10-test/summary/fig*.png` | `scripts/summarize_pcfm_xpred_nar10.py` |
+| `leray_xpred/s4_fig*.png` | `fm/2026-11-22_leray-xpred/S4_eval-nar1/summary/figures/fig*.png` | `scripts/summarize_leray_xpred_nar1.py` |
+| `leray_xpred/s5_fig*.png` | `fm/2026-11-22_leray-xpred/S5_eval-nar10/summary/figures/fig*.png` | `scripts/summarize_leray_xpred_nar10.py` |
 
 After regenerating a figure, copy it here again.

@@ -38,6 +38,17 @@ prediction); divergence and constraint_residual then cover all N_ar x 20 frames,
 norm is taken over each round's 20 frames), and the per-sample npz holds (samples, rounds) residual norms.
 Output names: <run>_nar<N>_<sampler><steps>_K<K>.json (euler: unchanged). The default (--sampler euler, no
 --constraint-residual) is the original code path.
+
+leray_xpred (docs/leray_xpred, DECISIONS L19): --constraint leray | partial (default c2 = the pcfm_xpred constraint,
+unchanged) replaces C2 by the Leray projection D u = 0 (fm/leray.LerayConstraint; --div-scale raw | vr, --wall) or by
+the partial projection along it to div_rel = tau (PartialLerayConstraint, raw, free); both need --geometry (npz of
+scripts/leray_xpred_geometry.py, real). The sampler tag gains '-leray-<raw|vr>-<free|wall>' / '-partial-raw' (C2 names
+unchanged). --geometry also adds, for any sampler (Euler included): region_metrics (L8: Rel L2 = mean over samples of
+the per-sample ratio, over all frames and per round, in the regions all / excl_body / excl_obstacle / strict, with v
+as stored and with v / r), divergence_vr (div_rel on Ω with v / r, N_ar = 1 or a constrained sampler), and for the
+Leray constraints leray_residual (from the evaluated physical prediction, float64: max |D_f u| over the constraint
+region and div_rel of the constraint's own D, per frame); per-sample sums go to the _per_sample.npz. Without
+--geometry nothing changes.
 """
 import argparse, json, math, os, statistics, sys, time
 
@@ -90,12 +101,16 @@ def load_geo(path, device):
     return geo, float(np.abs(z["dx"]).mean()), float(np.abs(z["dy"]).mean()), json.loads(str(z["checks"]))
 
 
-def make_draw(model, objective, n_steps, seed, sampler="euler", sampler_kw=None, omega=None, residual=False):
+def make_draw(model, objective, n_steps, seed, sampler="euler", sampler_kw=None, omega=None, residual=False,
+              leray=None):
     """sampler 'euler' (default, the original path) or a constrained sampler of fm/constrained.py (pcfm_xpred: 'interp',
     'pcfm', 'final_only'; constraint C2 with the per-sample target of DECISIONS P19). With a constrained sampler, or
     residual=True (euler: only the per-sample target is computed, for the residual statistics), the returned draw has
     set_batch(x_raw, sim_ids, device) -> tau (B,), to be called with the batch's physical input before its draws, and
-    (constrained samplers) log: one summary per draw call."""
+    (constrained samplers) log: one summary per draw call.
+    leray (leray_xpred): None (C2) or dict(kind='leray' | 'partial', scale, wall, geometry=LerayGeometry, tol,
+    max_iter); the batch ctx then also holds the Leray keys (region, [fixed], s, float64 dx / dy), added after the
+    per-sample target tau has been computed exactly as for C2."""
     from fm.wrapper import FMPredictor, fold, unfold
     if sampler == "euler":
         pred = FMPredictor(model, T_OUT, C, n_steps=n_steps, n_samples=1, seed=seed, solver="euler", objective=objective)
@@ -122,11 +137,18 @@ def make_draw(model, objective, n_steps, seed, sampler="euler", sampler_kw=None,
         def set_batch(x_raw, sim_ids, device):
             ctx = geom.ctx(sim_ids, device)
             ctx["tau"] = DivRelConstraint.tau_last_input(x_raw.to(device), ctx)
+            if leray is not None:
+                ctx.update(leray["geometry"].ctx(sim_ids, device, leray["scale"], leray["wall"]))
             state["ctx"] = ctx
             return ctx["tau"]
 
         def set_normalizer(norm):
-            pred.constraint = DivRelConstraint.from_normalizer(norm, None)
+            if leray is None:
+                pred.constraint = DivRelConstraint.from_normalizer(norm, None)
+            else:
+                from fm.leray import LerayConstraint, PartialLerayConstraint
+                cls = LerayConstraint if leray["kind"] == "leray" else PartialLerayConstraint
+                pred.constraint = cls.from_normalizer(norm, T_out=T_OUT, C=C, tol=leray["tol"], max_iter=leray["max_iter"])
         draw.set_batch, draw.set_normalizer, draw.log = set_batch, set_normalizer, []
     return draw
 
@@ -150,6 +172,26 @@ def summarize_log(log, tol):
             H = torch.cat([l[key] for l in log], 1).double().numpy()
             o[f"per_step_{key}"] = {"median": np.nanmedian(H, 1).tolist(), "max": np.nanmax(H, 1).tolist(),
                                     "nan": int(np.isnan(H).sum())}
+    if log and log[0].get("proj_final") is not None:  # leray_xpred: closed-form projections (per frame)
+        cat = lambda key, sub=None: torch.cat([(l["proj_final"] if sub is None else l["proj_steps"][sub])[key].flatten()
+                                               for l in log]).double().numpy()
+        it = cat("iters")
+        o["leray_final"] = {
+            "cg_iters": {**st(it), "q99": float(np.quantile(it, .99))},
+            "rel_res_true": st(cat("rel_res_true")), "max_abs_before": st(cat("max_abs_before")),
+            "max_abs_after": st(cat("max_abs_after")), "not_converged_frames": int((cat("converged") == 0).sum()),
+            "nan_frames": int((~np.isfinite(cat("max_abs_after"))).sum())}
+        tot = cat("dsq_region") + cat("dsq_outside") + cat("dsq_fixed")
+        o["leray_final"]["change_share"] = {k: float(cat(f"dsq_{k}").sum() / tot.sum()) for k in ("region", "outside", "fixed")}
+        if "alpha" in log[0]["proj_final"]:
+            o["partial_final"] = {"alpha": st(cat("alpha")), "gap": st(cat("gap")),
+                                  "unreachable_frames": int(cat("unreachable").sum())}
+        if log[0].get("proj_steps"):
+            n = len(log[0]["proj_steps"])
+            o["leray_per_step"] = {k: {"median": [float(np.median(cat(k, i))) for i in range(n)],
+                                       "max": [float(np.max(cat(k, i))) for i in range(n)]}
+                                   for k in ("max_abs_before", "iters", "rel_res_true")}
+            o["leray_per_step"]["not_converged_frames"] = int(sum((cat("converged", i) == 0).sum() for i in range(n)))
     return o
 
 
@@ -165,7 +207,9 @@ def rollout(draw, norm, x, y, n_ar):
 
 
 @torch.no_grad()
-def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_seed=0):
+def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_seed=0, lx=None):
+    """lx (leray_xpred, --geometry): None, or dict(geometry=LerayGeometry, leray=None | the make_draw leray dict);
+    adds region_metrics, divergence_vr and (Leray constraints) leray_residual (module docstring)."""
     from pilfm.official_eval import METRIC_NAMES
     from realpdebench.utils.metrics import eval_metrics, mse_loss
     from realpdebench.utils.utils import set_seed
@@ -190,6 +234,13 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
     if track:  # the per-sample target is set once per batch from the real input and held for all N_ar rounds (P25)
         draw.set_normalizer(norm)
     taus = []
+    if lx is not None:
+        from fm.leray import div_op, div_rel_scaled, _m
+        lgeo = lx["geometry"]
+        lcon = lx.get("leray")
+        reg_se = {t: [] for t in tags + ("target",)}  # per sample (b, region, round, channel)
+        div_vr = {t: [] for t in ("target",) + tags}
+        lres = {t: {"max_abs": [], "div_rel": []} for t in ("target",) + tags} if lcon is not None and lcon["kind"] == "leray" else None
     for bi, (x, y) in enumerate(loader):
         b = x.size(0)
         sids = sim_ids[bi * batch_size: bi * batch_size + b]
@@ -234,6 +285,33 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
                 for t, F in (("target", yc[i]), ("single", S[0, i]), ("kmean", km[i])):
                     div[t].append(div_rel(F[..., 0].double(), F[..., 1].double(), dx, dy, om).cpu())
                 div_sid += [s] * yc.shape[1]
+        if lx is not None:
+            Rm = lgeo.regions(sids, device)  # (b, n_regions, H, W)
+            for t, P in (("single", S[0]), ("kmean", km), ("target", None)):
+                acc = []
+                for r in range(n_ar):
+                    sl = slice(r * T_OUT, (r + 1) * T_OUT)
+                    q = (yc[:, sl] if P is None else P[:, sl] - yc[:, sl]).double().pow(2)
+                    acc.append(torch.einsum("bthwc,bkhw->bkc", q, Rm))
+                reg_se[t].append(torch.stack(acc, 2).cpu())
+            if geo is not None and (n_ar == 1 or track):
+                rr = lgeo.ratio(sids, device)
+                for i, s in enumerate(sids):
+                    om, dx, dy = geo[s]
+                    for t, F in (("target", yc[i]), ("single", S[0, i]), ("kmean", km[i])):
+                        div_vr[t].append(div_rel(F[..., 0].double(), F[..., 1].double() / rr[i], dx, dy, om).cpu())
+            if lres is not None:
+                cl = lgeo.ctx(sids, device, lcon["scale"], lcon["wall"])
+                for t, F in (("target", yc), ("single", S[0]), ("kmean", km)):
+                    uu, vv = F[..., 0].double(), F[..., 1].double()
+                    R_, fx = _m(cl["region"], uu), cl.get("fixed")
+                    fr = None if fx is None else 1 - _m(fx, uu)
+                    bv = lambda q: q.view(-1, 1, 1, 1)
+                    d = div_op(uu, vv, R_, bv(cl["dx"]), bv(cl["dy"]), bv(cl["s"]), fr)
+                    lres[t]["max_abs"].append(d.abs().amax((-2, -1)).cpu())
+                    if fr is not None:
+                        uu, vv = uu * fr, vv * fr
+                    lres[t]["div_rel"].append(div_rel_scaled(uu, vv, cl["dx"], cl["dy"], cl["region"], cl["s"]).cpu())
         if spec is not None and n_ar == 1 and bi == 0:
             fl = lambda F, ch: F[..., ch].reshape(-1, *F.shape[-3:-1]).double()
             spectra = {"k_rad_per_m": spec.k, "n_frames": int(b * yc.shape[1]),
@@ -290,6 +368,53 @@ def evaluate(env, draw, K, n_ar, batch_size, device, geo=None, spec=None, eval_s
                                    for t, h in per.items()}}
             res["_arrays"] = {"tau": tau, **{f"h_norm_{t}": (v[:, 0] if n_ar == 1 else v) for t, v in hn.items()},
                               "sim_id": np.array(sim_ids[:n])}
+    if lx is not None:  # leray_xpred: region variants (L8), v/r-scaled div_rel, Leray residual
+        SE = {t: torch.cat(v).numpy() for t, v in reg_se.items()}  # (N, regions, rounds, 2)
+        rv = lgeo.ratio(sim_ids[:n], "cpu").numpy()
+        rm = {"definition": "Rel L2 = mean over samples of sqrt(sum err^2 / sum target^2) over the region's cells, u and "
+                            "v, all frames (per_round: each round's 20 frames); '_vr': v of prediction and target "
+                            "divided by the trajectory's beta/alpha r (realdata_checks v/r variant)",
+              "regions": {"all": "every cell", "excl_body": "not the cylinder disk D/2 (L17)",
+                          "excl_obstacle": "not the dilated obstacle (the 2.4 % / 0.48 U region of the real-data report)",
+                          "strict": "strict Ω (Ω minus the artefact zones)"}}
+        for k, name in enumerate(lgeo.REGIONS):
+            for suf in ("", "_vr"):
+                w = np.ones((n, 2))
+                if suf:
+                    w[:, 1] = 1 / rv ** 2
+                tt = (SE["target"][:, k] * w[:, None, :]).sum(-1)  # (N, rounds)
+                rm[name + suf] = {}
+                for t in tags:
+                    e = (SE[t][:, k] * w[:, None, :]).sum(-1)
+                    rm[name + suf][t] = {"rel_l2": float(np.mean(np.sqrt(e.sum(1) / tt.sum(1)))),
+                                         "per_round_rel_l2": np.mean(np.sqrt(e / tt), 0).tolist()}
+        res["region_metrics"] = rm
+        arr = res.setdefault("_arrays", {"sim_id": np.array(sim_ids[:n])})
+        arr.update({f"region_se_{t}": v for t, v in SE.items()}, region_names=np.array(lgeo.REGIONS))
+        if div_vr["target"]:
+            d = {t: torch.cat(v).numpy() for t, v in div_vr.items()}
+            fs = np.array(div_sid)
+            res["divergence_vr"] = {
+                t: {"median_frames": float(np.median(v)),
+                    "median_of_traj_medians": float(np.median([np.median(v[fs == s]) for s in np.unique(fs)])),
+                    "q25": float(np.quantile(v, 0.25)), "q75": float(np.quantile(v, 0.75)),
+                    **({"per_round_median": np.median(v.reshape(-1, n_ar, T_OUT), axis=(0, 2)).tolist()} if n_ar > 1 else {})}
+                for t, v in d.items()}
+            res["divergence_vr"]["definition"] = "div_rel on Ω (D32) with v / r (r = the trajectory's beta/alpha)"
+        if lres is not None:
+            q = lambda v: {"median": float(np.median(v)), "q99": float(np.quantile(v, .99)), "max": float(v.max()),
+                           "mean": float(v.mean())}
+            out = {"definition": "from the evaluated physical prediction, float64: max |D_f u| (1/s) over the constraint "
+                                 "region and div_rel of the constraint's own operator (region, s, fixed cells zeroed), "
+                                 f"per frame; constraint scale={lcon['scale']} wall={lcon['wall']}"}
+            for t, dct in lres.items():
+                ma, dr = torch.cat(dct["max_abs"]).numpy(), torch.cat(dct["div_rel"]).numpy()  # (N, n_ar*20)
+                out[t] = {"max_abs": q(ma), "div_rel": q(dr)}
+                if n_ar > 1:
+                    out[t]["per_round_max_abs_median"] = np.median(ma.reshape(-1, n_ar, T_OUT), axis=(0, 2)).tolist()
+                    out[t]["per_round_div_rel_median"] = np.median(dr.reshape(-1, n_ar, T_OUT), axis=(0, 2)).tolist()
+                arr[f"leray_max_abs_{t}"] = ma.max(1); arr[f"leray_div_rel_median_{t}"] = np.median(dr, 1)
+            res["leray_residual"] = out
     res["spectrum"] = spectra
     res.update(n_samples=n, channels_evaluated=int(c))
     return res
@@ -371,7 +496,29 @@ def main():
                          "current state (P30); 'implied' adds '-implied' to the sampler tag in the output name")
     ap.add_argument("--constraint-residual", action="store_true",
                     help="euler: also compute the C2 residual against the per-sample target (P19); always on otherwise")
+    ap.add_argument("--constraint", default="c2", choices=["c2", "leray", "partial"],
+                    help="leray_xpred: constraint of the constrained samplers (default c2 = pcfm_xpred, unchanged)")
+    ap.add_argument("--div-scale", default="raw", choices=["raw", "vr"], help="leray: v term scale s (raw: 1; vr: 1/r)")
+    ap.add_argument("--wall", action="store_true", help="leray: cylinder body fixed at 0, region Ω_wall (L7, L17)")
+    ap.add_argument("--geometry", default=None,
+                    help="leray_xpred: npz of scripts/leray_xpred_geometry.py (real); needed by leray / partial, and "
+                         "adds the region / v/r metrics to any eval")
+    ap.add_argument("--cg-tol", type=float, default=1e-10, help="leray / partial: CG relative tolerance (L11)")
+    ap.add_argument("--cg-max-iter", type=int, default=5000, help="leray / partial: CG iteration cap (L11)")
     a = ap.parse_args()
+    if a.constraint != "c2":
+        if a.sampler not in ("pcfm", "final_only") or not a.geometry:
+            sys.exit("--constraint leray / partial need --sampler pcfm | final_only and --geometry")
+        if a.constraint == "partial" and (a.wall or a.div_scale != "raw"):
+            sys.exit("--constraint partial is defined with the raw scale and without the wall (L4)")
+    elif a.wall or a.div_scale != "raw":
+        sys.exit("--wall / --div-scale need --constraint leray")
+    lgeo = None
+    if a.geometry:
+        from fm.leray import LerayGeometry
+        lgeo = LerayGeometry(a.geometry)
+    leray = None if a.constraint == "c2" else dict(kind=a.constraint, scale=a.div_scale, wall=a.wall, geometry=lgeo,
+                                                    tol=a.cg_tol, max_iter=a.cg_max_iter)
     constrained = a.sampler != "euler"
     if (constrained or a.constraint_residual) and (not a.omega or a.official):
         sys.exit("constrained samplers / --constraint-residual need --omega; bench: FM runs only (no --official)")
@@ -387,6 +534,8 @@ def main():
     elif a.retreat != "init":
         sys.exit("--retreat needs a constrained sampler")
     tag = a.sampler + ("-implied" if a.retreat == "implied" else "")
+    if leray is not None:
+        tag += f"-leray-{a.div_scale}-{'wall' if a.wall else 'free'}" if a.constraint == "leray" else "-partial-raw"
     if not torch.cuda.is_available():
         sys.exit("CUDA not available")
     from pilfm import meta
@@ -397,8 +546,9 @@ def main():
     os.makedirs(a.out_dir, exist_ok=True)
 
     if a.mode == "bench":
-        if constrained:  # pcfm_xpred: one call (20 frames) of a constrained sampler on the first test inputs (real
-            # inputs: the per-sample target and the projection cost depend on them); B = 1 and 64, CUDA events, fp32
+        if constrained or a.geometry:  # pcfm_xpred: one call (20 frames) of a constrained sampler on the first test inputs
+            # (real inputs: the per-sample target and the projection cost depend on them); B = 1 and 64, CUDA events, fp32.
+            # leray_xpred: with --geometry, Euler is timed the same way (same inputs and timing), for a like-for-like A0
             env = Env(a.data_root, need_test=True)
             norm = env.normalizer(device)
             xs, ys = zip(*[env.test[i] for i in range(64)])
@@ -408,8 +558,10 @@ def main():
             for run in a.run:
                 name = os.path.basename(run.rstrip("/"))
                 model, objective, st, rm = load_run(run, a.ckpt, device)
-                draw = make_draw(model, objective, a.steps, a.noise_seed, a.sampler, skw, a.omega)
-                draw.set_normalizer(norm)
+                draw = make_draw(model, objective, a.steps, a.noise_seed, a.sampler, skw, a.omega,
+                                 residual=not constrained, leray=leray)
+                if constrained:
+                    draw.set_normalizer(norm)
                 rec = {"name": name, "kind": "fm", "objective": objective, "sampler": a.sampler, "sampler_kw": skw,
                        "solver": "euler", "N": a.steps, "nfe": objectives.nfe(objective, "euler", a.steps),
                        "inputs": "first test samples (timing only)"}
@@ -421,9 +573,10 @@ def main():
                     rec[f"call_b{B}_ms_per_sample"] = rec[f"call_b{B}_ms"] / B
                     rec[f"call_b{B}_ms_per_frame"] = rec[f"call_b{B}_ms"] / T_OUT
                     rec[f"call_b{B}_peak_mem_GiB"] = torch.cuda.max_memory_allocated() / 2 ** 30
-                    if draw.log and draw.log[-1].get("newton_iters") is not None:
+                    if getattr(draw, "log", None) and draw.log[-1].get("newton_iters") is not None:
                         rec[f"call_b{B}_newton_iters_per_call"] = sorted({int(l["newton_iters"].max()) for l in draw.log})
-                    draw.log.clear()
+                    if constrained:
+                        draw.log.clear()
                 rec.update(gpu=torch.cuda.get_device_name(0), precision="fp32", torch=torch.__version__)
                 json.dump(rec, open(os.path.join(a.out_dir, f"bench_{name}_{tag}.json"), "w"), indent=1)
                 print(json.dumps(rec), flush=True)
@@ -475,9 +628,11 @@ def main():
             if os.path.exists(out):
                 continue
             model, objective, st, rm = load_run(run, a.ckpt, device)
-            draw = make_draw(model, objective, a.steps, a.noise_seed, a.sampler, skw, a.omega, a.constraint_residual)
+            draw = make_draw(model, objective, a.steps, a.noise_seed, a.sampler, skw, a.omega, a.constraint_residual,
+                             leray=leray)
             t0 = time.time()
-            res = evaluate(env, draw, a.K, n_ar, a.batch_size, device, geo, spec)
+            res = evaluate(env, draw, a.K, n_ar, a.batch_size, device, geo, spec,
+                           lx=None if lgeo is None else {"geometry": lgeo, "leray": leray})
             arrays = res.pop("_arrays", None)
             rec = {"name": name, "run": run, "ckpt": a.ckpt, "ckpt_step": st["step"], "objective": objective,
                    "solver": "euler", "N": a.steps, "nfe": objectives.nfe(objective, "euler", a.steps), "K": a.K,
@@ -488,6 +643,11 @@ def main():
             if constrained:
                 rec["sampler"], rec["sampler_kw"], rec["retreat"] = a.sampler, skw, a.retreat
                 rec["sampler_diagnostics"] = summarize_log(draw.log, a.newton_tol)
+            if leray is not None:
+                rec["constraint"] = {"kind": a.constraint, "div_scale": a.div_scale, "wall": a.wall,
+                                     "cg_tol": a.cg_tol, "cg_max_iter": a.cg_max_iter}
+            if lgeo is not None:
+                rec["geometry"], rec["geometry_checks"] = a.geometry, lgeo.checks
             if arrays is not None:
                 np.savez(out[:-5] + "_per_sample.npz", **arrays)
             json.dump(rec, open(out, "w"), indent=1)

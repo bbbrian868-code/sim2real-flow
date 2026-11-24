@@ -6,6 +6,9 @@ Samplers (constrained_sample, mode):
                   anchored Newton-Schur projection of the last sample until ||h|| < newton_tol or newton_max_iter (P9)
   final_only  A3  interp steps, final Newton-Schur projection only
   (eci, A4: not implemented -- only C2, a nonlinear constraint, is used (DECISIONS P11))
+leray_xpred (docs/leray_xpred, L19): a constraint that provides project(y, ctx) (fm/leray.py: Leray projection, partial
+projection) is applied by that closed-form projection, per step (pcfm) and once at the end (pcfm, final_only), instead
+of gn_project; info then holds proj_steps / proj_final (the constraint's last_info) and newton_* = None.
 
 Conventions follow fm/paths.py: t = 0 noise, t = 1 data, y_t = (1 - t) y0 + t y1, Euler grid t_k = k / N (k * dt, as
 euler_sample). y0 is drawn exactly as euler_sample draws it (one torch.randn(shape, generator) call) and is kept fixed
@@ -263,7 +266,12 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
         raise ValueError("relaxed correction is defined with the initial-noise retreat only")
     if retreat == "implied" and 1.0 / n_steps < model.t_floor - 1e-12:
         raise ValueError("implied retreat: 1 - t falls below t_floor on this grid (the Euler equivalence would break)")
-    if mode in ("pcfm", "final_only") and (newton_tol is None or newton_max_iter is None):
+    # leray_xpred (L19): a constraint with project(y, ctx) (fm/leray.py, closed-form linear projection) replaces both
+    # Gauss-Newton projections; newton_* are then unused. Constraints without project take the original path.
+    closed = constraint is not None and hasattr(constraint, "project")
+    if closed and relaxed is not None:
+        raise ValueError("relaxed correction is not defined for closed-form projections")
+    if mode in ("pcfm", "final_only") and not closed and (newton_tol is None or newton_max_iter is None):
         raise ValueError("pcfm / final_only need newton_tol and newton_max_iter")
     need_h = constraint is not None and (mode != "interp" or return_info)
     if mode != "interp" and constraint is None:
@@ -273,7 +281,7 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
     y0 = torch.randn(shape, device=cond.device, generator=generator)  # == euler_sample's single draw
     y = y0
     dt = 1.0 / n_steps
-    h_pre, h_post = [], []
+    h_pre, h_post, proj_steps = [], [], []
     for i in range(n_steps):
         t = torch.full((shape[0],), i * dt, device=cond.device)
         x = model.net(y, t, cond).to(y0.dtype)  # fp32 in evaluation (the net may run in lower precision)
@@ -281,7 +289,11 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
             h_pre.append(constraint.h(x, ctx).norm(dim=1))
         x_raw = x
         if mode == "pcfm":
-            x = gn_project(x, constraint, ctx, iters=1, eps=eps, jac=jac)
+            if closed:
+                x = constraint.project(x, ctx)
+                proj_steps.append(constraint.last_info)
+            else:
+                x = gn_project(x, constraint, ctx, iters=1, eps=eps, jac=jac)
             h_post.append(constraint.h(x, ctx).norm(dim=1))
         t_next = (i + 1) * dt
         if rk is not None:
@@ -292,7 +304,12 @@ def constrained_sample(model, cond, shape, n_steps, constraint, ctx, mode, gener
         else:
             y = (1 - t_next) * y0 + t_next * x
     info = {"h_pre": torch.stack(h_pre) if h_pre else None, "h_post": torch.stack(h_post) if h_post else None}
-    if mode in ("pcfm", "final_only"):
+    if mode in ("pcfm", "final_only") and closed:  # leray_xpred: one closed-form projection of the last sample
+        info["final_h"] = constraint.h(y, ctx).norm(dim=1)
+        y = constraint.project(y, ctx)
+        info["newton_iters"] = info["newton_res"] = None
+        info["proj_final"], info["proj_steps"] = constraint.last_info, (proj_steps or None)
+    elif mode in ("pcfm", "final_only"):
         info["final_h"] = constraint.h(y, ctx).norm(dim=1)
         y, pi = gn_project(y, constraint, ctx, anchor=y, iters=newton_max_iter, eps=final_eps, tol=newton_tol, jac=jac,
                            return_info=True)
